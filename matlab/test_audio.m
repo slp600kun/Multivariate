@@ -3,7 +3,7 @@ samples = [1,10*fs];
 maxlen = 10*fs;
 thisFile = "17_52.wav";
 [x,fs] = audioread(thisFile);
-y =x;
+y = x;
 x = x/sqrt(sum(abs(x.^2))/length(x));
 if (length(x) < 10*fs)
     x(end+1:maxlen) = 0;
