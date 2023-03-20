@@ -1,4 +1,4 @@
 git_key
-test-train-shakeel/venv
+training/venv
 bin/
-test-train-shakeel/__pycache__/
+training/__pycache__/
