@@ -9,7 +9,7 @@ import scipy.io as sc
 import numpy as np
 import os
 
-def convert_mat_to_list(mat_dir,feature_type):
+def convert_mat_to_list(mat_dir:str,feature_type:str) -> None:
     """
     複数のmatファイルをlistに変換する関数
     args: 
