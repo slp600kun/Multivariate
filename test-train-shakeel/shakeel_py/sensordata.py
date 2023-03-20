@@ -15,7 +15,7 @@ def convert_mat_to_list(mat_dir:str,feature_type:str) -> None:
     args: 
         - mat_dir(str): matファイルが格納されているディレクトリ名
     returns:
-        - 
+        - None
 
     """
 
