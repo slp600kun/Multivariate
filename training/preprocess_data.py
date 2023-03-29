@@ -18,8 +18,8 @@ import matlab.engine
 from sklearn.preprocessing import minmax_scale
 
 #linux内のmatlabを起動する
-mat = matlab.engine.start_matlab()
-mat.cd(r'../matlab', nargout=0)
+#mat = matlab.engine.start_matlab()
+#mat.cd(r'matlab', nargout=0)
 
 
 class preprocess_for_Siamese_Net():
@@ -111,9 +111,10 @@ class preprocess_for_Siamese_Net():
         climo_df =  climo_df.rename(columns={'No.': 'Time'})
         climo_df = climo_df.drop(["A(hPa)","Atom.F"],axis=1)
         climo_df = climo_df.astype({'Time':int, 'V(m/s)':float, "T(C)":float ,"H(%RH)":float})
+        
         #一行ずつ時間を更新
         for i in range(len(climo_df)):
-            number = climo_df.loc[i+19,"Time"]
+            number = sampling_interval * (i+1)
             climo_df.loc[i+19,"Time"] = climo_momenttime(number,beginning_time,sampling_interval)
         #行の部分に時間をセットする
         climo_df = climo_df.set_index('Time')
@@ -209,7 +210,7 @@ class preprocess_for_Siamese_Net():
             gauss_df = merged_data_df['H(%RH)']
             gauss_array = np.array(gauss_df.values[1:], dtype = 'float')
             mel_spect_gauss_data = mat.mel_spectrogram_bad(matlab.double(gauss_array),matlab.double(2900))  
-            scipy.io.savemat('data/mat/gauss/gauss'+ csv_path.replace('.csv','') + '.mat', {'gauss_feat':mel_spect_humid_data})  
+            scipy.io.savemat('data/mat/gauss/gauss'+ csv_path.replace('.csv','') + '.mat', {'gauss_feat':mel_spect_gauss_data})  
             print("convert milli Gauss data to mat file.")  
 
     def generate_npy_for_siamese(mat1_dir,mat1_feat,mat2_dir,mat2_feat):
@@ -222,7 +223,7 @@ class preprocess_for_Siamese_Net():
             - mat2_feat: ['wind_feat','temp_feat','humid_feat','gauss_feat']のどれか、mat1_dirの種類による
         """
 
-        def convert_mat_to_list(mat_dir:str,feature_type:str)-> list,list,list:
+        def convert_mat_to_list(mat_dir:str,feature_type:str):
             """
             ディレクトリ内のmatファイルの組み合わせを全てlistに変換する関数
             args: 
