@@ -14,6 +14,8 @@ import datetime as dt
 import random
 import pandas as pd
 
+preprocess = preprocess_for_Siamese_Net()
+
 def generate_siamese_data(action_df:pd,
                           not_action_df:pd,
                           slide_length:int,
@@ -183,68 +185,52 @@ def generate_npy_from_siamese_data(action_feat1:list,action_feat2:list,not_actio
 
     return feat1_a_set, feat1_b_set, feat2_a_set, feat2_b_set, labels
 
-preprocess = preprocess_for_Siamese_Net()
-walk_merged_df = preprocess.convert_csv_to_mergedcsv('data/csv/climomaster/2023-0317-walk.KAM.CSV','data/csv/ML-logger/2023-0317-walk-gauss.csv')
-no_merged_df = preprocess.convert_csv_to_mergedcsv('data/csv/climomaster/2023-0317.KAM.CSV','data/csv/ML-logger/2023-0317-gauss.csv')
 
-walk_wind_vel,walk_gauss,no_wind_vel,no_gauss = generate_siamese_data(walk_merged_df,no_merged_df,4,30,300)  
+test_walk_merged_df = preprocess.convert_csv_to_mergedcsv('data/csv/climomaster/2023-0318-walk.KAM.CSV','data/csv/ML-logger/2023-0318-walk-gauss.csv')
+test_no_merged_df = preprocess.convert_csv_to_mergedcsv('data/csv/climomaster/2023-0318.KAM.CSV','data/csv/ML-logger/2023-0318-gauss.csv')
 
-wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_siamese_data(walk_wind_vel,
-                                                                                      walk_gauss,
-                                                                                      no_wind_vel,
-                                                                                      no_gauss)
+test_walk_wind_vel,test_walk_gauss,test_no_wind_vel,test_no_gauss = generate_siamese_data(test_walk_merged_df,test_no_merged_df,4,30,300)  
 
-
+test_wind_a_set,test_wind_b_set,test_gauss_a_set,test_gauss_b_set,test_labels = generate_npy_from_siamese_data(test_walk_wind_vel,
+                                                                                                               test_walk_gauss,
+                                                                                                               test_no_wind_vel,
+                                                                                                               test_no_gauss)
 #npyファイルに変換
 datadir = "data/train-npy/"
+np.save(datadir + 'test_wind_a_set', test_wind_a_set)
+np.save(datadir + 'test_wind_b_set', test_wind_b_set)
+np.save(datadir + 'test_gauss_a_set', test_gauss_a_set)
+np.save(datadir + 'test_gauss_b_set', test_gauss_b_set)
+np.save(datadir + 'test_labels', test_labels)
 
-np.save(datadir + 'wind_a_set', wind_a_set)
-np.save(datadir + 'wind_b_set', wind_b_set)
-np.save(datadir + 'gauss_a_set', gauss_a_set)
-np.save(datadir + 'gauss_b_set', gauss_b_set)
-np.save(datadir + 'labels', labels)
-
-datadir = "data/train-npy/"
-checkpoints_dir = "data/checkpoints/"
 logs_dir = "data/logs/"
 
-true_gauss = np.load(datadir + 'gauss_a_set.npy')
-true_wind = np.load(datadir + 'wind_a_set.npy')
-wrong_gauss = np.load(datadir + 'gauss_b_set.npy')
-wrong_wind = np.load(datadir + 'wind_b_set.npy')
-label = np.load(datadir + 'labels.npy')
+#テストデータの学習
+test_true_gauss = np.load(datadir + 'test_gauss_a_set.npy')
+test_true_wind = np.load(datadir + 'test_wind_a_set.npy')
+test_wrong_gauss = np.load(datadir + 'test_gauss_b_set.npy')
+test_wrong_wind = np.load(datadir + 'test_wind_b_set.npy')
+test_label = np.load(datadir + 'test_labels.npy')
 
-traindataset = DummyDataset(true_gauss[0:75000],true_wind[0:75000],wrong_gauss[0:75000],
-                       wrong_wind[0:75000],label[0:75000])
-
-valdataset = DummyDataset(true_gauss[75000:99999],true_wind[75000:99999],wrong_gauss[75000:99999],
-                       wrong_wind[75000:99999],label[75000:99999])
-
-epochs = 50
 batch_size = 128
-train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
-val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
+testdataset = DummyDataset(test_true_gauss[0:30000],test_true_wind[0:30000],test_wrong_gauss[0:30000],
+                       test_wrong_wind[0:30000],test_label[0:30000])
+test_dataloader = DataLoader(testdataset, batch_size = batch_size, shuffle=False)
+test_acc_list = []
+file3 = open(logs_dir + 'test_accuracies.txt','w')
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#loss_fn = nn.CosineEmbeddingLoss().to(device)
 loss_fn = ContrastiveLoss().to(device)
 model = CombinedEncoder().to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001,weight_decay=0.01)
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1, verbose=True)
-model.train() 
-torch.set_grad_enabled(True)
-print("STARING TO TRAIN MODEL")
-train_loss_list = []
-val_acc_list = []
-file1 = open(logs_dir + "training_accuracies.txt","w")
-file2 = open(logs_dir + 'validation_accuracies.txt','w')
-for epoch in range(1, epochs+1):
-    model.train()
-    steps_losses = []
-    steps_accu = []
-    model_checkpoints = checkpoints_dir + "model_" + str(epoch) + ".pt"
-    for steps, (true_gauss_tensor, true_wind_tensor, wrong_gauss_tensor, wrong_wind_tensor, labels) in tqdm(enumerate(train_dataloader),total=len(train_dataloader)):
-        optimizer.zero_grad() 
+
+model_path = 'data/checkpoints/model_50.pt'
+model.load_state_dict(torch.load(model_path))
+model.eval()
+
+
+with torch.no_grad():
+    for steps, (true_gauss_tensor, true_wind_tensor, wrong_gauss_tensor, wrong_wind_tensor, labels) in tqdm(enumerate(test_dataloader),total=len(test_dataloader)):
+
         true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 1)
         true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 1)
         wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 1)
@@ -257,42 +243,7 @@ for epoch in range(1, epochs+1):
         genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
         forged_output = model(wrong_gauss_tensor.to(device), wrong_wind_tensor.to(device))
         loss,y_pred = loss_fn(genuine_output, forged_output, labels.to(device))
-        steps_losses.append(loss.cpu().detach().numpy())
-        train_loss_list.append(loss)
         prediction = (y_pred.cpu().detach().numpy()>0.4).astype(np.int)
         accuracy = accuracy_score(labels,prediction)
-        steps_accu.append(accuracy)
-        loss.backward()
-        optimizer.step()
-
-    now_time = dt.datetime.now()
-    print(f"EPOCH {epoch}| Train:  loss {np.mean(steps_losses)}| accuracy {np.mean(steps_accu)} {now_time}")
-    file1.write("%s , %s, %s, %s, %s, %s\n" % (str(epoch), "train_loss", str(np.mean(steps_losses)), "train_accuracy", str(np.mean(steps_accu)), now_time))
-    torch.save(model.state_dict(),model_checkpoints)
-    scheduler.step()
-    model.eval()
-    with torch.no_grad():
-        for steps, (true_gauss_tensor, true_wind_tensor, wrong_gauss_tensor, wrong_wind_tensor, labels) in tqdm(enumerate(val_dataloader),total=len(val_dataloader)):
-            true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 1)
-            true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 1)
-            wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 1)
-            wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 1)
-            true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 3)
-            true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 3)
-            wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 3)
-            wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 3)
-
-            genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
-            forged_output = model(wrong_gauss_tensor.to(device), wrong_wind_tensor.to(device))
-            loss,y_pred = loss_fn(genuine_output, forged_output, labels.to(device))
-            prediction = (y_pred.cpu().detach().numpy()>0.4).astype(np.int)
-            accuracy = accuracy_score(labels,prediction)
-            val_acc_list.append(accuracy)
-            steps_accu.append(accuracy)
-            steps_losses.append(loss.cpu().numpy())
-        print(f"EPOCH {epoch}| Validation:  loss {np.mean(steps_losses)}| accuracy {np.mean(steps_accu)} {now_time}")
-        file2.write("%s , %s, %s, %s, %s, %s\n" % (str(epoch), "val_loss", str(np.mean(steps_losses)), "val_accuracy", str(np.mean(steps_accu)), str(now_time)))
-     
-file1.close()
-file2.close()
-
+        test_acc_list.append(accuracy)
+        print(f"{steps}| test:  loss {np.mean(loss)}| accuracy {np.mean(accuracy)}")
