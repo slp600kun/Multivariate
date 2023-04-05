@@ -83,7 +83,7 @@ def generate_siamese_data(action_df:pd,
     #分割されたdf配列(この状態だとデータフレームの配列になる)
     action_segment_data_list = slide_time_data(action_df,slide_length,segment_data_length)
     not_action_segment_data_list = slide_time_data(not_action_df[not_action_df_starting_point:
-                                                                 not_action_df_starting_point+len(action_segment_data_list)],
+                                                                 not_action_df_starting_point+len(action_df)],
                                                                  slide_length,segment_data_length)
 
     #df先頭の特徴量のリスト
@@ -212,10 +212,9 @@ test_wrong_gauss = np.load(datadir + 'test_gauss_b_set.npy')
 test_wrong_wind = np.load(datadir + 'test_wind_b_set.npy')
 test_label = np.load(datadir + 'test_labels.npy')
 
-batch_size = 128
 testdataset = DummyDataset(test_true_gauss[0:30000],test_true_wind[0:30000],test_wrong_gauss[0:30000],
                        test_wrong_wind[0:30000],test_label[0:30000])
-test_dataloader = DataLoader(testdataset, batch_size = batch_size, shuffle=False)
+test_dataloader = DataLoader(testdataset, shuffle=False)
 test_acc_list = []
 file3 = open(logs_dir + 'test_accuracies.txt','w')
 
@@ -227,9 +226,10 @@ model_path = 'data/checkpoints/model_50.pt'
 model.load_state_dict(torch.load(model_path))
 model.eval()
 
-
+labels_array = []
+predictions_array = []
 with torch.no_grad():
-    for steps, (true_gauss_tensor, true_wind_tensor, wrong_gauss_tensor, wrong_wind_tensor, labels) in tqdm(enumerate(test_dataloader),total=len(test_dataloader)):
+    for num, (true_gauss_tensor, true_wind_tensor, wrong_gauss_tensor, wrong_wind_tensor, labels) in tqdm(enumerate(test_dataloader),total=len(test_dataloader)):
 
         true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 1)
         true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 1)
@@ -243,7 +243,44 @@ with torch.no_grad():
         genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
         forged_output = model(wrong_gauss_tensor.to(device), wrong_wind_tensor.to(device))
         loss,y_pred = loss_fn(genuine_output, forged_output, labels.to(device))
-        prediction = (y_pred.cpu().detach().numpy()>0.4).astype(np.int)
-        accuracy = accuracy_score(labels,prediction)
-        test_acc_list.append(accuracy)
-        print(f"{steps}| test:  loss {np.mean(loss)}| accuracy {np.mean(accuracy)}")
+        prediction = (y_pred.cpu().detach().numpy()>0.4).astype(int)[0]
+        labels_array.append(int(labels.item()))
+        predictions_array.append(prediction)
+
+def accuracy(y_pred, y_true):
+    """正解率を計算する関数"""
+    return np.mean(y_pred == y_true)
+
+def precision(y_pred, y_true):
+    """適合率を計算する関数"""
+    tp = np.sum((y_pred == 1) & (y_true == 1))  # true positive
+    fp = np.sum((y_pred == 1) & (y_true == 0))  # false positive
+    return tp / (tp + fp)
+
+def recall(y_pred, y_true):
+    """再現率を計算する関数"""
+    tp = np.sum((y_pred == 1) & (y_true == 1))  # true positive
+    fn = np.sum((y_pred == 0) & (y_true == 1))  # false negative
+    return tp / (tp + fn)
+
+def f1_score(y_pred, y_true):
+    """F値を計算する関数"""
+    p = precision(y_pred, y_true)
+    r = recall(y_pred, y_true)
+    return 2 * p * r / (p + r)
+
+y_true = np.array(labels_array)
+y_pred = np.array(predictions_array)
+
+acc = accuracy(y_pred, y_true)
+prec = precision(y_pred, y_true)
+rec = recall(y_pred, y_true)
+f1 = f1_score(y_pred, y_true)
+
+print(f"Accuracy: {acc:.3f}")
+print(f"Precision: {prec:.3f}")
+print(f"Recall: {rec:.3f}")
+print(f"F1 score: {f1:.3f}")
+
+file3.write("%s,%s,\n%s,%s,\n%s,%s,\n%s,%s,\n" %("Accuracy",str(acc),"Precision",str(prec),"Recall",str(rec),"F1 score",str(f1)))
+file3.close()
