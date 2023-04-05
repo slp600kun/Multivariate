@@ -18,11 +18,7 @@ def generate_siamese_data(action_df:pd,
                           not_action_df:pd,
                           slide_length:int,
                           segment_data_length:int,
-                          not_action_df_starting_point:int,
-                          is_wind_vel_converted: bool = True,
-                          is_temp_converted: bool = False,
-                          is_humid_converted: bool = False,
-                          is_gauss_converted: bool = True):
+                          not_action_df_starting_point:int):
     
     """
     dfの対から必要なデータ列を選択し、一定の長さで
@@ -80,9 +76,9 @@ def generate_siamese_data(action_df:pd,
 
     #分割されたdf配列(この状態だとデータフレームの配列になる)
     action_segment_data_list = slide_time_data(action_df,slide_length,segment_data_length)
-    not_action_segment_data_list = slide_time_data(not_action_df[not_action_df_starting_point:
-                                                                 not_action_df_starting_point+len(action_segment_data_list)],
+    not_action_segment_data_list = slide_time_data(not_action_df[not_action_df_starting_point:not_action_df_starting_point+len(action_df)],
                                                                  slide_length,segment_data_length)
+
 
     #df先頭の特徴量のリスト
     feat_list = list(action_segment_data_list[0].columns.values.tolist())
@@ -93,7 +89,6 @@ def generate_siamese_data(action_df:pd,
         not_action_feat1.append(not_action_df[feat_list[0]].values)
         action_feat2.append(action_df[feat_list[1]].values)
         not_action_feat2.append(not_action_df[feat_list[1]].values)
-    
     return action_feat1,action_feat2,not_action_feat1,not_action_feat2 
 
 def generate_npy_from_siamese_data(action_feat1:list,action_feat2:list,not_action_feat1:list,not_action_feat2:list):
@@ -158,7 +153,7 @@ def generate_npy_from_siamese_data(action_feat1:list,action_feat2:list,not_actio
 
         return feat_a,feat_b,feat_y
 
-    feat1_a, feat1_b,feat1_y = labeling_for_action(action_feat1,not_action_feat1)
+    feat1_a,feat1_b,feat1_y = labeling_for_action(action_feat1,not_action_feat1)
     feat2_a,feat2_b,feat2_y = labeling_for_action(action_feat2,not_action_feat2)
 
     label=[]
@@ -194,7 +189,6 @@ wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_siamese
                                                                                       no_wind_vel,
                                                                                       no_gauss)
 
-
 #npyファイルに変換
 datadir = "data/train-npy/"
 
@@ -224,6 +218,7 @@ epochs = 50
 batch_size = 128
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
+
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #loss_fn = nn.CosineEmbeddingLoss().to(device)
