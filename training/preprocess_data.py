@@ -120,7 +120,7 @@ class preprocess_for_Siamese_Net():
         climo_df = climo_df.set_index('Time')
 
         #milli gauss meterのデータフレームを取得
-        gauss_df = pd.read_csv(gauss_csv_path, encoding = 'shift-jis')
+        gauss_df = pd.read_csv(gauss_csv_path, encoding = 'shift_jis')
 
         #gauss.csvのデータ部の情報を加工し、gauss_dfを取得
         gauss_df['Time'] = gauss_df['年月日'].str.cat(gauss_df['時刻'], sep = ' ')

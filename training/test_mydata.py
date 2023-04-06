@@ -189,7 +189,7 @@ def generate_npy_from_siamese_data(action_feat1:list,action_feat2:list,not_actio
 test_walk_merged_df = preprocess.convert_csv_to_mergedcsv('data/csv/climomaster/2023-0318-walk.KAM.CSV','data/csv/ML-logger/2023-0318-walk-gauss.csv')
 test_no_merged_df = preprocess.convert_csv_to_mergedcsv('data/csv/climomaster/2023-0318.KAM.CSV','data/csv/ML-logger/2023-0318-gauss.csv')
 
-test_walk_wind_vel,test_walk_gauss,test_no_wind_vel,test_no_gauss = generate_siamese_data(test_walk_merged_df,test_no_merged_df,4,30,300)  
+test_walk_wind_vel,test_walk_gauss,test_no_wind_vel,test_no_gauss = generate_siamese_data(test_walk_merged_df,test_no_merged_df,4,30,28000)  
 
 test_wind_a_set,test_wind_b_set,test_gauss_a_set,test_gauss_b_set,test_labels = generate_npy_from_siamese_data(test_walk_wind_vel,
                                                                                                                test_walk_gauss,
