@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 from preprocess_data import preprocess_for_Siamese_Net
 from train import ConvLayer2D,windEncoder,CombinedEncoder,DummyDataset,ContrastiveLoss
@@ -219,7 +220,6 @@ batch_size = 128
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
 
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #loss_fn = nn.CosineEmbeddingLoss().to(device)
 loss_fn = ContrastiveLoss().to(device)
@@ -234,7 +234,10 @@ val_acc_list = []
 file1 = open(logs_dir + "training_accuracies.txt","w")
 file2 = open(logs_dir + 'validation_accuracies.txt','w')
 for epoch in range(1, epochs+1):
+
     model.train()
+    feature_vector_train = []
+    feature_vector_val = []
     steps_losses = []
     steps_accu = []
     model_checkpoints = checkpoints_dir + "model_" + str(epoch) + ".pt"
@@ -251,6 +254,17 @@ for epoch in range(1, epochs+1):
 
         genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
         forged_output = model(wrong_gauss_tensor.to(device), wrong_wind_tensor.to(device))
+        
+        if epoch == 10:
+            #特徴量ベクトルを別の配列に格納
+            genuine_np = genuine_output.detach().numpy()
+            for i in range(len(genuine_np)):
+                #特徴量ベクトルを配列に追加
+                feature_vector_train.append(genuine_np[i][0])
+            for i in range(len(genuine_np)):
+                print(feature_vector_train[i],labels[i])
+            sys.exit()
+
         loss,y_pred = loss_fn(genuine_output, forged_output, labels.to(device))
         steps_losses.append(loss.cpu().detach().numpy())
         train_loss_list.append(loss)
@@ -279,6 +293,13 @@ for epoch in range(1, epochs+1):
 
             genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
             forged_output = model(wrong_gauss_tensor.to(device), wrong_wind_tensor.to(device))
+
+            #特徴量ベクトルを別の配列に格納
+            genuine_np = genuine_output.detach().numpy()
+            for i in range(len(genuine_np)):
+                #特徴量ベクトルを配列に追加
+                feature_vector_train.append(genuine_np[i][0])
+    
             loss,y_pred = loss_fn(genuine_output, forged_output, labels.to(device))
             prediction = (y_pred.cpu().detach().numpy()>0.4).astype(int)
             accuracy = accuracy_score(labels,prediction)
