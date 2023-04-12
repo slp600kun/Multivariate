@@ -246,6 +246,7 @@ torch.set_grad_enabled(True)
 print("STARING TO TRAIN MODEL")
 file1 = open(logs_dir + "training_accuracies.txt","w")
 file2 = open(logs_dir + 'validation_accuracies.txt','w')
+file3 = open(logs_dir + 'svm_accuracies.txt' ,'w')
 for epoch in range(1, epochs+1):
 
     model.train()
@@ -320,8 +321,8 @@ for epoch in range(1, epochs+1):
             forged_output = model(wrong_gauss_tensor.to(device), wrong_wind_tensor.to(device))
 
             #特徴量ベクトルを別の配列に格納
-            genuine_np = genuine_output.detach().numpy()
-            labels_np = labels.detach().numpy()
+            genuine_np = genuine_output.cpu().detach().numpy()
+            labels_np = labels.cpu().detach().numpy()
             for i in range(len(genuine_np)):
                 if labels_np[i] == 1:
                     #特徴量ベクトルとラベルを配列に追加
@@ -380,7 +381,9 @@ for epoch in range(1, epochs+1):
     
     print(f'Epoch {epoch}, Accuracy on evaluation data: {accuracy_eval}')
 
+    file3.write("%s , %s, %s, %s, %s, %s\n" % (str(epoch), "loss", str(np.mean(svm_steps_losses)), "val_accuracy", str(np.mean(accuracy_eval)), str(now_time)))
+
      
 file1.close()
 file2.close()
-
+file3.close()
