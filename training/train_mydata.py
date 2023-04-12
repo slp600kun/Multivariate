@@ -1,15 +1,17 @@
 import sys
 import numpy as np
 from preprocess_data import preprocess_for_Siamese_Net
-from train import ConvLayer2D,windEncoder,CombinedEncoder,DummyDataset,ContrastiveLoss
+from train import ConvLayer2D,windEncoder,CombinedEncoder,DummyDataset,ContrastiveLoss,SVM_for_one_dim
 import torch; torch.utils.backcompat.broadcast_warning.enabled = True
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader,TensorDataset
 import matplotlib.pyplot as plt
+from sklearn import svm
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 from tqdm.auto import tqdm
 import datetime as dt
 import random
@@ -163,8 +165,12 @@ def generate_npy_from_siamese_data(action_feat1:list,action_feat2:list,not_actio
     for i in range(len(feat2_a)):
         if(feat1_y[i] == -1 or feat2_y[i] == -1):
             label.append(0)
+        #損失関数計算前に、-1を1に直す(svmにかける直前)
         elif(feat1_y[i] == feat2_y[i]):
-            label.append(1)
+            if feat1_y[i] == 1:
+                label.append(1)
+            elif feat1_y[i] == 0:
+                label.append(-1)
         else:
             label.append(0)
 
@@ -224,22 +230,36 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #loss_fn = nn.CosineEmbeddingLoss().to(device)
 loss_fn = ContrastiveLoss().to(device)
 model = CombinedEncoder().to(device)
+
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001,weight_decay=0.01)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1, verbose=True)
+
+#SVMマシンのモデル定義
+svm_model = SVM_for_one_dim().to(device)
+svm_loss_fn = torch.nn.HingeEmbeddingLoss().to(device)
+svm_optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+
 model.train() 
+
+
 torch.set_grad_enabled(True)
 print("STARING TO TRAIN MODEL")
-train_loss_list = []
-val_acc_list = []
 file1 = open(logs_dir + "training_accuracies.txt","w")
 file2 = open(logs_dir + 'validation_accuracies.txt','w')
 for epoch in range(1, epochs+1):
 
     model.train()
+    #svm学習に必要な配列
     feature_vector_train = []
+    feature_label_train = []
     feature_vector_val = []
+    feature_label_val = []
+    
     steps_losses = []
     steps_accu = []
+    svm_steps_losses = []
+    svm_steps_accu = []
+
     model_checkpoints = checkpoints_dir + "model_" + str(epoch) + ".pt"
     for steps, (true_gauss_tensor, true_wind_tensor, wrong_gauss_tensor, wrong_wind_tensor, labels) in tqdm(enumerate(train_dataloader),total=len(train_dataloader)):
         optimizer.zero_grad() 
@@ -254,20 +274,25 @@ for epoch in range(1, epochs+1):
 
         genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
         forged_output = model(wrong_gauss_tensor.to(device), wrong_wind_tensor.to(device))
-        
-        if epoch == 10:
-            #特徴量ベクトルを別の配列に格納
-            genuine_np = genuine_output.detach().numpy()
-            for i in range(len(genuine_np)):
-                #特徴量ベクトルを配列に追加
-                feature_vector_train.append(genuine_np[i][0])
-            for i in range(len(genuine_np)):
-                print(feature_vector_train[i],labels[i])
-            sys.exit()
 
-        loss,y_pred = loss_fn(genuine_output, forged_output, labels.to(device))
+        #特徴量ベクトルを別の配列に格納
+        genuine_np = genuine_output.cpu().detach().numpy()
+        labels_np = labels.cpu().detach().numpy()
+        for i in range(len(genuine_np)):
+            if labels_np[i] == 1:
+                #特徴量ベクトルとラベルを配列に追加
+                feature_vector_train.append(genuine_np[i][0])
+                feature_label_train.append(1)
+            if labels_np[i] == -1:
+                #特徴量ベクトルとラベルを配列に追加
+                feature_vector_train.append(genuine_np[i][0])
+                feature_label_train.append(-1)
+
+        #-1→1に変換(距離学習を行うため) 
+        abs_labels = torch.abs(labels).int()
+
+        loss,y_pred = loss_fn(genuine_output, forged_output, abs_labels.to(device))
         steps_losses.append(loss.cpu().detach().numpy())
-        train_loss_list.append(loss)
         prediction = (y_pred.cpu().detach().numpy()>0.4).astype(int)
         accuracy = accuracy_score(labels,prediction)
         steps_accu.append(accuracy)
@@ -296,18 +321,65 @@ for epoch in range(1, epochs+1):
 
             #特徴量ベクトルを別の配列に格納
             genuine_np = genuine_output.detach().numpy()
+            labels_np = labels.detach().numpy()
             for i in range(len(genuine_np)):
-                #特徴量ベクトルを配列に追加
-                feature_vector_train.append(genuine_np[i][0])
-    
+                if labels_np[i] == 1:
+                    #特徴量ベクトルとラベルを配列に追加
+                    feature_vector_val.append(genuine_np[i][0])
+                    feature_label_val.append(1)
+                if labels_np[i] == -1:
+                    #特徴量ベクトルとラベルを配列に追加
+                    feature_vector_val.append(genuine_np[i][0])
+                    feature_label_val.append(-1)
+            
+            #-1→1に変換(距離学習を行うため)
+            abs_labels = torch.abs(labels).int()
+
             loss,y_pred = loss_fn(genuine_output, forged_output, labels.to(device))
             prediction = (y_pred.cpu().detach().numpy()>0.4).astype(int)
             accuracy = accuracy_score(labels,prediction)
-            val_acc_list.append(accuracy)
             steps_accu.append(accuracy)
             steps_losses.append(loss.cpu().numpy())
         print(f"EPOCH {epoch}| Validation:  loss {np.mean(steps_losses)}| accuracy {np.mean(steps_accu)} {now_time}")
         file2.write("%s , %s, %s, %s, %s, %s\n" % (str(epoch), "val_loss", str(np.mean(steps_losses)), "val_accuracy", str(np.mean(steps_accu)), str(now_time)))
+
+    #識別学習(svm)
+    # テンソルに変換
+    vector_train = torch.tensor(feature_vector_train).float()
+    vector_val = torch.tensor(feature_vector_val).float()
+    label_train = torch.tensor(feature_label_train).float()
+    label_val = torch.tensor(feature_label_val).float()
+
+    # データセットを作成
+    svm_train_dataset = TensorDataset(vector_train, label_train)
+    svm_val_dataset = TensorDataset(label_val, label_val)
+    # データローダーを作成
+    svm_train_loader = DataLoader(svm_train_dataset,  shuffle=True)
+    svm_val_loader = DataLoader(svm_val_dataset, shuffle=True)
+    
+    svm_model.train()
+    for steps, (inputs, labels) in enumerate(svm_train_loader):
+        svm_optimizer.zero_grad()
+        outputs = svm_model(inputs.to(device))
+        svm_loss = svm_loss_fn(outputs.squeeze(), labels)
+        svm_steps_losses.append(loss.cpu().numpy())
+        svm_loss.backward()
+        svm_optimizer.step()
+    print(f'Epoch {epoch}, train loss: {np.mean(svm_steps_losses)}, ')
+
+    svm_model.eval()
+    with torch.no_grad():
+        correct_eval = 0
+        total_eval = 0
+        for x_eval, eval_labels in svm_val_loader:
+            output_eval = svm_model(x_eval)
+            predicted_eval = torch.sign(output_eval).squeeze().long()
+            total_eval += eval_labels.size(0)
+            correct_eval += (predicted_eval == eval_labels).sum().item()
+        accuracy_eval = correct_eval / total_eval
+    
+    print(f'Epoch {epoch}, Accuracy on evaluation data: {accuracy_eval}')
+
      
 file1.close()
 file2.close()

@@ -2,3 +2,5 @@ git_key
 training/venv
 bin/
 training/__pycache__/
+training/data/train-npy
+training/data/checkpoints

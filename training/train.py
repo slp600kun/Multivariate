@@ -180,3 +180,15 @@ class ContrastiveLoss(torch.nn.Module):
         loss = y * dist_sq + (1 - y) * torch.pow(dist, 2)
         loss = torch.sum(loss) / x0.size()[0]
         return loss, mdist
+    
+class SVM_for_one_dim(torch.nn.Module):
+    """
+    SVM machine for one dim data
+    """
+    def __init__(self):
+        super(SVM_for_one_dim, self).__init__()
+        self.linear = torch.nn.Linear(1, 1)
+
+    def forward(self, x):
+        x = self.linear(x)
+        return x
