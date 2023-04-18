@@ -1,7 +1,9 @@
 import sys
+import os
+import re
 import numpy as np
 from preprocess_data import preprocess_for_Siamese_Net
-from train import ConvLayer2D,windEncoder,CombinedEncoder,DummyDataset,ContrastiveLoss,SVM_for_one_dim
+from train import ConvLayer2D,windEncoder,CombinedEncoder,DummyDataset,ContrastiveLoss,SVM_for_two_dim
 import torch; torch.utils.backcompat.broadcast_warning.enabled = True
 import torch.nn as nn
 import torch.nn.functional as F
@@ -185,16 +187,40 @@ def generate_npy_from_siamese_data(action_feat1:list,action_feat2:list,not_actio
 
     return feat1_a_set, feat1_b_set, feat2_a_set, feat2_b_set, labels
 
+climo_walk_files = sorted([f for f in os.listdir('data/csv/climomaster') if 'walk' in f])
+gauss_walk_files = sorted([f for f in os.listdir('data/csv/ML-logger') if 'walk' in f])
+
+walk_wind_vel_list = []
+walk_gauss_list = []
+no_wind_vel_list = []
+no_gauss_list = []
+
 preprocess = preprocess_for_Siamese_Net()
-walk_merged_df = preprocess.convert_csv_to_mergedcsv('data/csv/climomaster/2023-0317-walk.KAM.CSV','data/csv/ML-logger/2023-0317-walk-gauss.csv')
-no_merged_df = preprocess.convert_csv_to_mergedcsv('data/csv/climomaster/2023-0317.KAM.CSV','data/csv/ML-logger/2023-0317-gauss.csv')
 
-walk_wind_vel,walk_gauss,no_wind_vel,no_gauss = generate_siamese_data(walk_merged_df,no_merged_df,4,30,300)  
+for i, (climo_csv_path, gauss_csv_path) in enumerate(zip(climo_walk_files,gauss_walk_files)):
+    
+    #ファイルパスを指定する
+    climo_walk_path = 'data/csv/climomaster/' + climo_csv_path
+    gauss_walk_path = 'data/csv/ML-logger/' + gauss_csv_path
+    climo_no_path = re.sub(r'-walk\d+', '', climo_walk_path)
+    gauss_no_path = re.sub(r'-walk\d+', '', gauss_walk_path)
 
-wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_siamese_data(walk_wind_vel,
-                                                                                      walk_gauss,
-                                                                                      no_wind_vel,
-                                                                                      no_gauss)
+    #dfにする
+    walk_merged_df = preprocess.convert_csv_to_mergedcsv(climo_walk_path,gauss_walk_path)
+    no_merged_df = preprocess.convert_csv_to_mergedcsv(climo_no_path,gauss_no_path)
+
+    walk_wind_vel,walk_gauss,no_wind_vel,no_gauss = generate_siamese_data(walk_merged_df,no_merged_df,4,30,300*(i+1))
+
+    walk_wind_vel_list.extend(walk_wind_vel)
+    walk_gauss_list.extend(walk_gauss)
+    no_wind_vel_list.extend(no_wind_vel)
+    no_gauss_list.extend(no_gauss)
+
+    
+wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_siamese_data(walk_wind_vel_list,
+                                                                                      walk_gauss_list,
+                                                                                      no_wind_vel_list,
+                                                                                      no_gauss_list)
 
 #npyファイルに変換
 datadir = "data/train-npy/"
@@ -215,13 +241,13 @@ wrong_gauss = np.load(datadir + 'gauss_b_set.npy')
 wrong_wind = np.load(datadir + 'wind_b_set.npy')
 label = np.load(datadir + 'labels.npy')
 
-traindataset = DummyDataset(true_gauss[0:75000],true_wind[0:75000],wrong_gauss[0:75000],
-                       wrong_wind[0:75000],label[0:75000])
+traindataset = DummyDataset(true_gauss[0:4000000],true_wind[0:4000000],wrong_gauss[0:4000000],
+                       wrong_wind[0:4000000],label[0:4000000])
 
-valdataset = DummyDataset(true_gauss[75000:99999],true_wind[75000:99999],wrong_gauss[75000:99999],
-                       wrong_wind[75000:99999],label[75000:99999])
+valdataset = DummyDataset(true_gauss[4000000:5062500],true_wind[4000000:5062500],wrong_gauss[4000000:5062500],
+                       wrong_wind[4000000:5062500],label[4000000:5062500])
 
-epochs = 50
+epochs = 10
 batch_size = 128
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
@@ -235,7 +261,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.001,weight_decay=0.01)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1, verbose=True)
 
 #SVMマシンのモデル定義
-svm_model = SVM_for_one_dim().to(device)
+svm_model = SVM_for_two_dim().to(device)
 svm_loss_fn = torch.nn.HingeEmbeddingLoss().to(device)
 svm_optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
 
@@ -276,23 +302,23 @@ for epoch in range(1, epochs+1):
         genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
         forged_output = model(wrong_gauss_tensor.to(device), wrong_wind_tensor.to(device))
 
-        #特徴量ベクトルを別の配列に格納
-        genuine_np = genuine_output.cpu().detach().numpy()
+        #2次元特徴量ベクトルを別の配列に格納
+        genuine_np = genuine_output[1].cpu().detach().numpy()
         labels_np = labels.cpu().detach().numpy()
         for i in range(len(genuine_np)):
             if labels_np[i] == 1:
                 #特徴量ベクトルとラベルを配列に追加
-                feature_vector_train.append(genuine_np[i][0])
+                feature_vector_train.append(torch.tensor(genuine_np[i]))
                 feature_label_train.append(1)
             if labels_np[i] == -1:
                 #特徴量ベクトルとラベルを配列に追加
-                feature_vector_train.append(genuine_np[i][0])
+                feature_vector_train.append(torch.tensor(genuine_np[i]))
                 feature_label_train.append(-1)
 
         #-1→1に変換(距離学習を行うため) 
         abs_labels = torch.abs(labels).int()
 
-        loss,y_pred = loss_fn(genuine_output, forged_output, abs_labels.to(device))
+        loss,y_pred = loss_fn(genuine_output[0], forged_output[0], abs_labels.to(device))
         steps_losses.append(loss.cpu().detach().numpy())
         prediction = (y_pred.cpu().detach().numpy()>0.4).astype(int)
         accuracy = accuracy_score(labels,prediction)
@@ -321,49 +347,52 @@ for epoch in range(1, epochs+1):
             forged_output = model(wrong_gauss_tensor.to(device), wrong_wind_tensor.to(device))
 
             #特徴量ベクトルを別の配列に格納
-            genuine_np = genuine_output.cpu().detach().numpy()
+            genuine_np = genuine_output[1].cpu().detach().numpy()
             labels_np = labels.cpu().detach().numpy()
             for i in range(len(genuine_np)):
                 if labels_np[i] == 1:
                     #特徴量ベクトルとラベルを配列に追加
-                    feature_vector_val.append(genuine_np[i][0])
+                    feature_vector_val.append(torch.tensor(genuine_np[i]))
                     feature_label_val.append(1)
                 if labels_np[i] == -1:
                     #特徴量ベクトルとラベルを配列に追加
-                    feature_vector_val.append(genuine_np[i][0])
+                    feature_vector_val.append(torch.tensor(genuine_np[i]))
                     feature_label_val.append(-1)
             
             #-1→1に変換(距離学習を行うため)
             abs_labels = torch.abs(labels).int()
 
-            loss,y_pred = loss_fn(genuine_output, forged_output, labels.to(device))
+            loss,y_pred = loss_fn(genuine_output[0], forged_output[0], labels.to(device))
             prediction = (y_pred.cpu().detach().numpy()>0.4).astype(int)
             accuracy = accuracy_score(labels,prediction)
             steps_accu.append(accuracy)
             steps_losses.append(loss.cpu().numpy())
         print(f"EPOCH {epoch}| Validation:  loss {np.mean(steps_losses)}| accuracy {np.mean(steps_accu)} {now_time}")
         file2.write("%s , %s, %s, %s, %s, %s\n" % (str(epoch), "val_loss", str(np.mean(steps_losses)), "val_accuracy", str(np.mean(steps_accu)), str(now_time)))
+file1.close()
+file2.close()
 
-    #識別学習(svm)
-    # テンソルに変換
-    vector_train = torch.tensor(feature_vector_train).float()
-    vector_val = torch.tensor(feature_vector_val).float()
-    label_train = torch.tensor(feature_label_train).float()
-    label_val = torch.tensor(feature_label_val).float()
+"""
+#識別学習(svm)
+#テンソルに変換
+vector_train = torch.stack(feature_vector_train)
+vector_val = torch.stack(feature_vector_val)
+label_train = torch.tensor(feature_label_train)
+label_val = torch.tensor(feature_label_val)
 
-    # データセットを作成
-    svm_train_dataset = TensorDataset(vector_train, label_train)
-    svm_val_dataset = TensorDataset(label_val, label_val)
-    # データローダーを作成
-    svm_train_loader = DataLoader(svm_train_dataset,  shuffle=True)
-    svm_val_loader = DataLoader(svm_val_dataset, shuffle=True)
-    
-    svm_model.train()
+# データセットを作成
+svm_train_dataset = TensorDataset(vector_train, label_train)
+svm_val_dataset = TensorDataset(vector_val, label_val)
+# データローダーを作成
+svm_train_loader = DataLoader(svm_train_dataset,  batch_size= 128,shuffle=True)
+svm_val_loader = DataLoader(svm_val_dataset, batch_size= 128,shuffle=True)
+
+svm_model.train()
+for epoch in range(1, 100):
     for steps, (inputs, labels) in enumerate(svm_train_loader):
-        svm_optimizer.zero_grad()
         outputs = svm_model(inputs.to(device))
-        svm_loss = svm_loss_fn(outputs.squeeze(), labels)
-        svm_steps_losses.append(loss.cpu().numpy())
+        svm_loss = svm_loss_fn(outputs, labels.to(device))
+        svm_steps_losses.append(svm_loss.cpu().detach().numpy())
         svm_loss.backward()
         svm_optimizer.step()
     print(f'Epoch {epoch}, train loss: {np.mean(svm_steps_losses)}, ')
@@ -372,18 +401,14 @@ for epoch in range(1, epochs+1):
     with torch.no_grad():
         correct_eval = 0
         total_eval = 0
-        for x_eval, eval_labels in svm_val_loader:
-            output_eval = svm_model(x_eval)
+        for eval_vec, eval_labels in svm_val_loader:
+            output_eval = svm_model(eval_vec.to(device))
             predicted_eval = torch.sign(output_eval).squeeze().long()
-            total_eval += eval_labels.size(0)
-            correct_eval += (predicted_eval == eval_labels).sum().item()
+            total_eval += eval_labels.to(device).size(0)
+            correct_eval += (predicted_eval == eval_labels.to(device)).sum().item()
         accuracy_eval = correct_eval / total_eval
-    
+
     print(f'Epoch {epoch}, Accuracy on evaluation data: {accuracy_eval}')
-
     file3.write("%s , %s, %s, %s, %s, %s\n" % (str(epoch), "loss", str(np.mean(svm_steps_losses)), "val_accuracy", str(np.mean(accuracy_eval)), str(now_time)))
-
-     
-file1.close()
-file2.close()
 file3.close()
+"""

@@ -121,7 +121,9 @@ class CombinedEncoder(nn.Module):
         #self.dense_1 = nn.Linear(15360, 50)
         #self.dense_2 = nn.Linear(50, 1)
         self.dense_1 = nn.Linear(128, 64)
-        self.dense_2 = nn.Linear(64, 1)        
+        self.dense_2 = nn.Linear(64, 1)  
+        self.dense_3 = nn.Linear(128, 64)
+        self.dense_4 = nn.Linear(64, 2)        
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
         #self.softmax = F.log_softmax(net_output[0], -1)
@@ -131,9 +133,14 @@ class CombinedEncoder(nn.Module):
         gauss_output = self.gauss_enc(gauss_input)
         wind_output = self.wind_enc(wind_input)
         output = torch.cat((gauss_output,wind_output),1)
-        output = self.relu(self.dense_1(output))
-        output = self.sigmoid(self.dense_2(output))
-        return output
+        #距離学習に対する出力
+        output_one_dim = self.relu(self.dense_1(output))
+        output_one_dim = self.sigmoid(self.dense_2(output_one_dim))
+
+        #識別学習に対する出力
+        output_two_dim = self.relu(self.dense_3(output))
+        output_two_dim = self.sigmoid(self.dense_4(output_two_dim))        
+        return output_one_dim, output_two_dim
 
 class DummyDataset(Dataset):
     """
@@ -181,13 +188,13 @@ class ContrastiveLoss(torch.nn.Module):
         loss = torch.sum(loss) / x0.size()[0]
         return loss, mdist
     
-class SVM_for_one_dim(torch.nn.Module):
+class SVM_for_two_dim(torch.nn.Module):
     """
     SVM machine for one dim data
     """
     def __init__(self):
-        super(SVM_for_one_dim, self).__init__()
-        self.linear = torch.nn.Linear(1, 1)
+        super(SVM_for_two_dim, self).__init__()
+        self.linear = torch.nn.Linear(2, 1)
 
     def forward(self, x):
         x = self.linear(x)
