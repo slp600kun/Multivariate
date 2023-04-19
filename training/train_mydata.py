@@ -241,14 +241,14 @@ wrong_gauss = np.load(datadir + 'gauss_b_set.npy')
 wrong_wind = np.load(datadir + 'wind_b_set.npy')
 label = np.load(datadir + 'labels.npy')
 
-traindataset = DummyDataset(true_gauss[0:4000000],true_wind[0:4000000],wrong_gauss[0:4000000],
-                       wrong_wind[0:4000000],label[0:4000000])
+traindataset = DummyDataset(true_gauss[0:750000],true_wind[0:750000],wrong_gauss[0:750000],
+                       wrong_wind[0:750000],label[0:750000])
 
-valdataset = DummyDataset(true_gauss[4000000:5062500],true_wind[4000000:5062500],wrong_gauss[4000000:5062500],
-                       wrong_wind[4000000:5062500],label[4000000:5062500])
+valdataset = DummyDataset(true_gauss[750000:1000000],true_wind[750000:1000000],wrong_gauss[750000:1000000],
+                       wrong_wind[750000:1000000],label[750000:1000000])
 
-epochs = 10
-batch_size = 128
+epochs = 3
+batch_size = 1000
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
 
@@ -284,8 +284,6 @@ for epoch in range(1, epochs+1):
     
     steps_losses = []
     steps_accu = []
-    svm_steps_losses = []
-    svm_steps_accu = []
 
     model_checkpoints = checkpoints_dir + "model_" + str(epoch) + ".pt"
     for steps, (true_gauss_tensor, true_wind_tensor, wrong_gauss_tensor, wrong_wind_tensor, labels) in tqdm(enumerate(train_dataloader),total=len(train_dataloader)):
@@ -372,7 +370,6 @@ for epoch in range(1, epochs+1):
 file1.close()
 file2.close()
 
-"""
 #識別学習(svm)
 #テンソルに変換
 vector_train = torch.stack(feature_vector_train)
@@ -388,7 +385,11 @@ svm_train_loader = DataLoader(svm_train_dataset,  batch_size= 128,shuffle=True)
 svm_val_loader = DataLoader(svm_val_dataset, batch_size= 128,shuffle=True)
 
 svm_model.train()
-for epoch in range(1, 100):
+for epoch in range(100):
+    
+    svm_steps_losses = []
+    svm_steps_accu = []
+
     for steps, (inputs, labels) in enumerate(svm_train_loader):
         outputs = svm_model(inputs.to(device))
         svm_loss = svm_loss_fn(outputs, labels.to(device))
@@ -409,6 +410,5 @@ for epoch in range(1, 100):
         accuracy_eval = correct_eval / total_eval
 
     print(f'Epoch {epoch}, Accuracy on evaluation data: {accuracy_eval}')
-    file3.write("%s , %s, %s, %s, %s, %s\n" % (str(epoch), "loss", str(np.mean(svm_steps_losses)), "val_accuracy", str(np.mean(accuracy_eval)), str(now_time)))
+    file3.write("%s , %s, %s, %s, %s, %s\n" % (str(epoch), "loss", str(np.mean(svm_steps_losses)), "val_accuracy", str(accuracy_eval), str(now_time)))
 file3.close()
-"""

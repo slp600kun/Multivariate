@@ -61,7 +61,7 @@ def generate_siamese_data(action_df:pd,
             df = df.drop('H(%RH)', axis=1)
         
         if is_gauss_converted == False:
-            df = df.drop('φ(mG)', axis=1)   
+            df = df.drop('φ(mG)', axis=1)  
         
         #出力配列
         segmented_datafarme_array = []
