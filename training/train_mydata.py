@@ -187,6 +187,16 @@ def generate_npy_from_siamese_data(action_feat1:list,action_feat2:list,not_actio
 
     return feat1_a_set, feat1_b_set, feat2_a_set, feat2_b_set, labels
 
+def normalization(data):
+
+    # データの平均値と標準偏差を計算
+    mean = np.mean(data, axis=0)
+    std = np.std(data, axis=0)
+
+    # データの正規化
+    normalized_data = (data - mean) / std
+    return normalized_data
+
 climo_walk_files = sorted([f for f in os.listdir('data/csv/climomaster') if 'walk' in f])
 gauss_walk_files = sorted([f for f in os.listdir('data/csv/ML-logger') if 'walk' in f])
 
@@ -241,14 +251,22 @@ wrong_gauss = np.load(datadir + 'gauss_b_set.npy')
 wrong_wind = np.load(datadir + 'wind_b_set.npy')
 label = np.load(datadir + 'labels.npy')
 
-traindataset = DummyDataset(true_gauss[0:750000],true_wind[0:750000],wrong_gauss[0:750000],
-                       wrong_wind[0:750000],label[0:750000])
+train_data_len = 75000
+val_data_len = 100000
 
-valdataset = DummyDataset(true_gauss[750000:1000000],true_wind[750000:1000000],wrong_gauss[750000:1000000],
-                       wrong_wind[750000:1000000],label[750000:1000000])
+true_gauss_normal = normalization(true_gauss[0:val_data_len])
+true_wind_normal = normalization(true_wind[0:val_data_len])
+wrong_gauss_normal = normalization(wrong_gauss[0:val_data_len])
+wrong_wind_normal = normalization(wrong_wind[0:val_data_len])
 
-epochs = 3
-batch_size = 1000
+traindataset = DummyDataset(true_gauss_normal[0:train_data_len ],true_wind_normal[0:train_data_len],wrong_gauss_normal[0:train_data_len],
+                       wrong_wind_normal[0:train_data_len],label[0:train_data_len])
+
+valdataset = DummyDataset(true_gauss_normal[train_data_len:val_data_len],true_wind_normal[train_data_len:val_data_len],wrong_gauss_normal[train_data_len:val_data_len],
+                       wrong_wind_normal[train_data_len:val_data_len],label[train_data_len:val_data_len])
+
+epochs = 50
+batch_size = 500
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
 
