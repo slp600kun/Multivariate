@@ -219,7 +219,7 @@ for i, (climo_csv_path, gauss_csv_path) in enumerate(zip(climo_walk_files,gauss_
     walk_merged_df = preprocess.convert_csv_to_mergedcsv(climo_walk_path,gauss_walk_path)
     no_merged_df = preprocess.convert_csv_to_mergedcsv(climo_no_path,gauss_no_path)
 
-    walk_wind_vel,walk_gauss,no_wind_vel,no_gauss = generate_siamese_data(walk_merged_df,no_merged_df,4,30,300*(i+1))
+    walk_wind_vel,walk_gauss,no_wind_vel,no_gauss = generate_siamese_data(walk_merged_df,no_merged_df,2,30,300*(i+1))
 
     walk_wind_vel_list.extend(walk_wind_vel)
     walk_gauss_list.extend(walk_gauss)
