@@ -1,4 +1,5 @@
 import numpy as np
+import sys
 from preprocess_data import preprocess_for_Siamese_Net
 from train import ConvLayer2D,windEncoder,CombinedEncoder,DummyDataset,ContrastiveLoss
 import torch; torch.utils.backcompat.broadcast_warning.enabled = True
@@ -233,16 +234,16 @@ test_wrong_gauss = np.load(datadir + 'gauss_b_set.npy')
 test_wrong_wind = np.load(datadir + 'wind_b_set.npy')
 test_label = np.load(datadir + 'labels.npy')
 
-val_data_len = 900000
-test_data_len = 1050000
+val_data_len = 80000
+test_data_len = 90000
 
 true_gauss_normal = normalization(test_true_gauss[0:test_data_len])
 true_wind_normal = normalization(test_true_wind[0:test_data_len])
 wrong_gauss_normal = normalization(test_wrong_gauss[0:test_data_len])
 wrong_wind_normal = normalization(test_wrong_wind[0:test_data_len])
 
-testdataset = DummyDataset(test_true_gauss[val_data_len:test_data_len],test_true_wind[val_data_len:test_data_len],test_wrong_gauss[val_data_len:test_data_len],
-                       test_wrong_wind[val_data_len:test_data_len],test_label[val_data_len:test_data_len])
+testdataset = DummyDataset(true_gauss_normal[val_data_len:test_data_len],true_wind_normal[val_data_len:test_data_len],wrong_gauss_normal[val_data_len:test_data_len],
+                           wrong_wind_normal[val_data_len:test_data_len],test_label[val_data_len:test_data_len])
 test_dataloader = DataLoader(testdataset, shuffle=False)
 
 test_acc_list = []
@@ -269,13 +270,16 @@ with torch.no_grad():
         true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 3)
         wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 3)
         wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 3)
-
+        
         genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
         forged_output = model(wrong_gauss_tensor.to(device), wrong_wind_tensor.to(device))
-        loss,y_pred = loss_fn(genuine_output, forged_output, labels.to(device))
+        #-1→1に変換(距離学習を行うため)
+        abs_labels = torch.abs(labels).int()
+        loss,y_pred = loss_fn(genuine_output[0], forged_output[0], abs_labels.to(device))
         prediction = (y_pred.cpu().detach().numpy()>0.4).astype(int)[0]
-        labels_array.append(int(labels.item()))
+        labels_array.append(int(abs_labels.item()))
         predictions_array.append(prediction)
+
 
 def accuracy(y_pred, y_true):
     """正解率を計算する関数"""

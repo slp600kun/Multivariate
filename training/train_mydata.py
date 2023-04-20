@@ -251,8 +251,8 @@ wrong_gauss = np.load(datadir + 'gauss_b_set.npy')
 wrong_wind = np.load(datadir + 'wind_b_set.npy')
 label = np.load(datadir + 'labels.npy')
 
-train_data_len = 750000
-val_data_len = 900000
+train_data_len = 70000
+val_data_len = 80000
 
 true_gauss_normal = normalization(true_gauss[0:val_data_len])
 true_wind_normal = normalization(true_wind[0:val_data_len])
@@ -266,7 +266,7 @@ valdataset = DummyDataset(true_gauss_normal[train_data_len:val_data_len],true_wi
                        wrong_wind_normal[train_data_len:val_data_len],label[train_data_len:val_data_len])
 
 epochs = 50
-batch_size = 500
+batch_size = 128
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
 
@@ -372,9 +372,9 @@ for epoch in range(1, epochs+1):
             #-1→1に変換(距離学習を行うため)
             abs_labels = torch.abs(labels).int()
 
-            loss,y_pred = loss_fn(genuine_output[0], forged_output[0], labels.to(device))
+            loss,y_pred = loss_fn(genuine_output[0], forged_output[0], abs_labels.to(device))
             prediction = (y_pred.cpu().detach().numpy()>0.4).astype(int)
-            accuracy = accuracy_score(labels,prediction)
+            accuracy = accuracy_score(abs_labels,prediction)
             steps_accu.append(accuracy)
             steps_losses.append(loss.cpu().numpy())
         print(f"EPOCH {epoch}| Validation:  loss {np.mean(steps_losses)}| accuracy {np.mean(steps_accu)} {now_time}")
