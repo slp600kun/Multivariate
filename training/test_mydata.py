@@ -185,7 +185,20 @@ def generate_npy_from_siamese_data(action_feat1:list,action_feat2:list,not_actio
 
     return feat1_a_set, feat1_b_set, feat2_a_set, feat2_b_set, labels
 
+def normalization(data):
 
+    # データの平均値と標準偏差を計算
+    mean = np.mean(data, axis=0)
+    std = np.std(data, axis=0)
+
+    # データの正規化
+    normalized_data = (data - mean) / std
+    return normalized_data
+
+datadir = "data/train-npy/"
+logs_dir = "data/logs/"
+
+"""
 test_walk_merged_df = preprocess.convert_csv_to_mergedcsv('data/csv/climomaster/2023-0318-walk.KAM.CSV','data/csv/ML-logger/2023-0318-walk-gauss.csv')
 test_no_merged_df = preprocess.convert_csv_to_mergedcsv('data/csv/climomaster/2023-0318.KAM.CSV','data/csv/ML-logger/2023-0318-gauss.csv')
 
@@ -196,14 +209,11 @@ test_wind_a_set,test_wind_b_set,test_gauss_a_set,test_gauss_b_set,test_labels = 
                                                                                                                test_no_wind_vel,
                                                                                                                test_no_gauss)
 #npyファイルに変換
-datadir = "data/train-npy/"
 np.save(datadir + 'test_wind_a_set', test_wind_a_set)
 np.save(datadir + 'test_wind_b_set', test_wind_b_set)
 np.save(datadir + 'test_gauss_a_set', test_gauss_a_set)
 np.save(datadir + 'test_gauss_b_set', test_gauss_b_set)
 np.save(datadir + 'test_labels', test_labels)
-
-logs_dir = "data/logs/"
 
 #テストデータの学習
 test_true_gauss = np.load(datadir + 'test_gauss_a_set.npy')
@@ -215,6 +225,26 @@ test_label = np.load(datadir + 'test_labels.npy')
 testdataset = DummyDataset(test_true_gauss[0:30000],test_true_wind[0:30000],test_wrong_gauss[0:30000],
                        test_wrong_wind[0:30000],test_label[0:30000])
 test_dataloader = DataLoader(testdataset, shuffle=False)
+"""
+#テストデータの学習
+test_true_gauss = np.load(datadir + 'gauss_a_set.npy')
+test_true_wind = np.load(datadir + 'wind_a_set.npy')
+test_wrong_gauss = np.load(datadir + 'gauss_b_set.npy')
+test_wrong_wind = np.load(datadir + 'wind_b_set.npy')
+test_label = np.load(datadir + 'labels.npy')
+
+val_data_len = 900000
+test_data_len = 1050000
+
+true_gauss_normal = normalization(test_true_gauss[0:test_data_len])
+true_wind_normal = normalization(test_true_wind[0:test_data_len])
+wrong_gauss_normal = normalization(test_wrong_gauss[0:test_data_len])
+wrong_wind_normal = normalization(test_wrong_wind[0:test_data_len])
+
+testdataset = DummyDataset(test_true_gauss[val_data_len:test_data_len],test_true_wind[val_data_len:test_data_len],test_wrong_gauss[val_data_len:test_data_len],
+                       test_wrong_wind[val_data_len:test_data_len],test_label[val_data_len:test_data_len])
+test_dataloader = DataLoader(testdataset, shuffle=False)
+
 test_acc_list = []
 file3 = open(logs_dir + 'test_accuracies.txt','w')
 
