@@ -91,27 +91,6 @@ class windEncoder(nn.Module):
         output = output.view(output.size(0), -1)
         return output
 
-'''
-class windEncoder(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Define parameters
-        self.CNN_block_1 = ConvLayer2D(in_channels=1, out_channels=8, kernel=5, output_height=499, output_width=24)
-        self.CNN_block_2 = ConvLayer2D(in_channels=8, out_channels=16, kernel=3, output_height=247, output_width=11)
-        self.CNN_block_3 = ConvLayer2D(in_channels=16, out_channels=32, kernel=3, output_height=122, output_width=4)
-        self.CNN_block_4 = ConvLayer2D(in_channels=32, out_channels=32, kernel=3, output_height=60, output_width=4)
-        #self.CNN_block_5 = ConvLayer2D(in_channels=32, out_channels=32, kernel=3, output_height=60, output_width=4)
-
-    def forward(self, input):
-        output = self.CNN_block_1(input)
-        output = self.CNN_block_2(output)
-        output = self.CNN_block_3(output)   
-        output = self.CNN_block_4(output)
-        #output = self.CNN_block_5(output)
-        output = output.view(output.size(0), -1)
-        return output
-'''    
-    
 class CombinedEncoder(nn.Module):
     def __init__(self):
         super().__init__()
@@ -142,6 +121,74 @@ class CombinedEncoder(nn.Module):
         output_two_dim = self.sigmoid(self.dense_4(output_two_dim))        
         return output_one_dim, output_two_dim
 
+
+class WindEncoderLSTM(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Define parameters
+        self.LSTM_block_1 = nn.LSTM(input_size=60, hidden_size=240, num_layers=4,batch_first=True,dropout=0.2)
+        self.LSTM_block_2 = nn.LSTM(input_size=240, hidden_size=120, num_layers=4,batch_first=True,dropout=0.2)
+        self.LSTM_block_3 = nn.LSTM(input_size=120, hidden_size=60, num_layers=4,batch_first=True,dropout=0.2)
+        #self.LSTM_block_4 = nn.LSTM(input_size=60, hidden_size=30, num_layers=4,batch_first=True,dropout=0.2)
+        self.bn_block_1 = nn.BatchNorm1d(240)
+        self.bn_block_2 = nn.BatchNorm1d(120)
+        self.bn_block_3 = nn.BatchNorm1d(60)
+        # self.relu = nn.ReLU()
+
+    def forward(self, input):
+        output,_ = self.LSTM_block_1(input)
+        output = output.permute(0, 2, 1)
+        output = self.bn_block_1(output)
+        output = output.permute(0, 2, 1)
+
+        output,_ = self.LSTM_block_2(output)
+        output = output.permute(0, 2, 1)
+        output = self.bn_block_2(output)
+        output = output.permute(0, 2, 1)
+
+        #output,_ = self.LSTM_block_3(output)
+        #output = output.permute(0, 2, 1)
+        #output = self.bn_block_3(output)
+        #output = output.permute(0, 2, 1)
+
+        output = self.LSTM_block_3(output)[0][:,-1,:]
+        output = self.bn_block_3(output)
+
+        return output
+    
+class CombinedEncoderLSTM(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Define parameters
+        self.gauss_enc = WindEncoderLSTM()
+        self.wind_enc = WindEncoderLSTM()
+        self.bn_block_4 = nn.BatchNorm1d(60)
+        self.dropout_1 = nn.Dropout(0.2)
+        self.dense_2 = nn.Linear(120, 60)
+        self.relu = nn.ReLU()
+        self.dense_4 = nn.Linear(60, 1)
+        self.dense_5 = nn.Linear(60, 2)
+        self.sigmoid = nn.Sigmoid()
+
+        
+    def forward(self, gauss_input, wind_input):
+        gauss_output = self.gauss_enc(gauss_input)
+        wind_output = self.wind_enc(wind_input)
+        output = torch.cat((gauss_output,wind_output),1)
+        output = self.dense_2(output)
+        output = self.relu(output)
+        output = self.dropout_1(output)
+        output = self.bn_block_4(output)
+
+        #距離学習に対する出力
+        output_one_dim = self.dense_4(output)
+        output_one_dim = self.sigmoid(output_one_dim)
+
+        #識別学習に対する出力
+        output_two_dim = self.dense_5(output)
+        output_two_dim = self.sigmoid(output_two_dim)        
+        return output_one_dim, output_two_dim
+    
 class DummyDataset(Dataset):
     """
     This class should contain complete dataset  in init 

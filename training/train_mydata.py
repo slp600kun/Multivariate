@@ -3,7 +3,7 @@ import os
 import re
 import numpy as np
 from preprocess_data import preprocess_for_Siamese_Net
-from train import ConvLayer2D,windEncoder,CombinedEncoder,DummyDataset,ContrastiveLoss,SVM_for_two_dim
+from train import ConvLayer2D,windEncoder,CombinedEncoder,DummyDataset,ContrastiveLoss,SVM_for_two_dim,CombinedEncoderLSTM
 import torch; torch.utils.backcompat.broadcast_warning.enabled = True
 import torch.nn as nn
 import torch.nn.functional as F
@@ -273,7 +273,7 @@ val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #loss_fn = nn.CosineEmbeddingLoss().to(device)
 loss_fn = ContrastiveLoss().to(device)
-model = CombinedEncoder().to(device)
+model = CombinedEncoderLSTM().to(device)
 
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001,weight_decay=0.01)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1, verbose=True)
@@ -304,10 +304,10 @@ for epoch in range(1, epochs+1):
         true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 1)
         wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 1)
         wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 1)
-        true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 3)
-        true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 3)
-        wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 3)
-        wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 3)
+        #true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 3)
+        #true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 3)
+        #wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 3)
+        #wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 3)
 
         genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
         forged_output = model(wrong_gauss_tensor.to(device), wrong_wind_tensor.to(device))
