@@ -126,14 +126,20 @@ class WindEncoderLSTM(nn.Module):
     def __init__(self):
         super().__init__()
         # Define parameters
-        self.LSTM_block_1 = nn.LSTM(input_size=60, hidden_size=240, num_layers=4,batch_first=True,dropout=0.2)
-        self.LSTM_block_2 = nn.LSTM(input_size=240, hidden_size=120, num_layers=4,batch_first=True,dropout=0.2)
-        self.LSTM_block_3 = nn.LSTM(input_size=120, hidden_size=60, num_layers=4,batch_first=True,dropout=0.2)
+        self.LSTM_block_1 = nn.LSTM(input_size=120, hidden_size=600, num_layers=2,batch_first=True,dropout=0.3)
+        self.LSTM_block_2 = nn.LSTM(input_size=600, hidden_size=300, num_layers=2,batch_first=True,dropout=0.3)
+        self.LSTM_block_3 = nn.LSTM(input_size=300, hidden_size=120, num_layers=2,batch_first=True,dropout=0.3)
         #self.LSTM_block_4 = nn.LSTM(input_size=60, hidden_size=30, num_layers=4,batch_first=True,dropout=0.2)
-        self.bn_block_1 = nn.BatchNorm1d(240)
-        self.bn_block_2 = nn.BatchNorm1d(120)
-        self.bn_block_3 = nn.BatchNorm1d(60)
-        # self.relu = nn.ReLU()
+        self.bn_block_1 = nn.BatchNorm1d(600)
+        self.bn_block_2 = nn.BatchNorm1d(300)
+        self.bn_block_3 = nn.BatchNorm1d(120)
+        self.bn_block_4 = nn.BatchNorm1d(60)
+        self.dropout_1 = nn.Dropout(0.3)
+        self.dense_2 = nn.Linear(120, 60)
+        self.relu = nn.ReLU()
+        self.dense_4 = nn.Linear(60, 1)
+        self.dense_5 = nn.Linear(60, 2)
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, input):
         output,_ = self.LSTM_block_1(input)
@@ -153,28 +159,7 @@ class WindEncoderLSTM(nn.Module):
 
         output = self.LSTM_block_3(output)[0][:,-1,:]
         output = self.bn_block_3(output)
-
-        return output
-    
-class CombinedEncoderLSTM(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Define parameters
-        self.gauss_enc = WindEncoderLSTM()
-        self.wind_enc = WindEncoderLSTM()
-        self.bn_block_4 = nn.BatchNorm1d(60)
-        self.dropout_1 = nn.Dropout(0.2)
-        self.dense_2 = nn.Linear(120, 60)
-        self.relu = nn.ReLU()
-        self.dense_4 = nn.Linear(60, 1)
-        self.dense_5 = nn.Linear(60, 2)
-        self.sigmoid = nn.Sigmoid()
-
         
-    def forward(self, gauss_input, wind_input):
-        gauss_output = self.gauss_enc(gauss_input)
-        wind_output = self.wind_enc(wind_input)
-        output = torch.cat((gauss_output,wind_output),1)
         output = self.dense_2(output)
         output = self.relu(output)
         output = self.dropout_1(output)
@@ -183,10 +168,23 @@ class CombinedEncoderLSTM(nn.Module):
         #距離学習に対する出力
         output_one_dim = self.dense_4(output)
         output_one_dim = self.sigmoid(output_one_dim)
-
         #識別学習に対する出力
         output_two_dim = self.dense_5(output)
-        output_two_dim = self.sigmoid(output_two_dim)        
+        output_two_dim = self.sigmoid(output_two_dim)
+        
+        return output_one_dim, output_two_dim
+    
+class CombinedEncoderLSTM(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Define parameters
+        self.gauss_enc = WindEncoderLSTM()
+        self.wind_enc = WindEncoderLSTM()
+        
+    def forward(self, gauss_input, wind_input):
+        output = torch.cat((gauss_input,wind_input),2)
+        output_one_dim,output_two_dim = self.gauss_enc(output)
+
         return output_one_dim, output_two_dim
     
 class DummyDataset(Dataset):

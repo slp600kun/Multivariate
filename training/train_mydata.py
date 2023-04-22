@@ -197,6 +197,7 @@ def normalization(data):
     normalized_data = (data - mean) / std
     return normalized_data
 
+"""
 climo_walk_files = sorted([f for f in os.listdir('data/csv/climomaster') if 'walk' in f])
 gauss_walk_files = sorted([f for f in os.listdir('data/csv/ML-logger') if 'walk' in f])
 
@@ -240,6 +241,7 @@ np.save(datadir + 'wind_b_set', wind_b_set)
 np.save(datadir + 'gauss_a_set', gauss_a_set)
 np.save(datadir + 'gauss_b_set', gauss_b_set)
 np.save(datadir + 'labels', labels)
+"""
 
 datadir = "data/train-npy/"
 checkpoints_dir = "data/checkpoints/"
@@ -262,8 +264,8 @@ wrong_wind_normal = normalization(wrong_wind[0:val_data_len])
 traindataset = DummyDataset(true_gauss_normal[0:train_data_len],true_wind_normal[0:train_data_len],wrong_gauss_normal[0:train_data_len],
                        wrong_wind_normal[0:train_data_len],label[0:train_data_len])
 
-valdataset = DummyDataset(true_gauss_normal[train_data_len:val_data_len],true_wind_normal[train_data_len:val_data_len],wrong_gauss_normal[train_data_len:val_data_len],
-                       wrong_wind_normal[train_data_len:val_data_len],label[train_data_len:val_data_len])
+valdataset = DummyDataset(true_gauss_normal[train_data_len:val_data_len],true_wind_normal[train_data_len:val_data_len],
+                        wrong_gauss_normal[train_data_len:val_data_len],wrong_wind_normal[train_data_len:val_data_len],label[train_data_len:val_data_len])
 
 epochs = 50
 batch_size = 128
@@ -311,7 +313,7 @@ for epoch in range(1, epochs+1):
 
         genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
         forged_output = model(wrong_gauss_tensor.to(device), wrong_wind_tensor.to(device))
-
+        
         #2次元特徴量ベクトルを別の配列に格納
         genuine_np = genuine_output[1].cpu().detach().numpy()
         labels_np = labels.cpu().detach().numpy()
@@ -348,10 +350,10 @@ for epoch in range(1, epochs+1):
             true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 1)
             wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 1)
             wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 1)
-            true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 3)
-            true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 3)
-            wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 3)
-            wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 3)
+            #true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 3)
+            #true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 3)
+            #wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 3)
+            #wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 3)
 
             genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
             forged_output = model(wrong_gauss_tensor.to(device), wrong_wind_tensor.to(device))
@@ -371,7 +373,6 @@ for epoch in range(1, epochs+1):
             
             #-1→1に変換(距離学習を行うため)
             abs_labels = torch.abs(labels).int()
-
             loss,y_pred = loss_fn(genuine_output[0], forged_output[0], abs_labels.to(device))
             prediction = (y_pred.cpu().detach().numpy()>0.4).astype(int)
             accuracy = accuracy_score(abs_labels,prediction)
