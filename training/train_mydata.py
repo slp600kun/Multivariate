@@ -220,7 +220,7 @@ for i, (climo_csv_path, gauss_csv_path) in enumerate(zip(climo_walk_files,gauss_
     walk_merged_df = preprocess.convert_csv_to_mergedcsv(climo_walk_path,gauss_walk_path)
     no_merged_df = preprocess.convert_csv_to_mergedcsv(climo_no_path,gauss_no_path)
 
-    walk_wind_vel,walk_gauss,no_wind_vel,no_gauss = generate_siamese_data(walk_merged_df,no_merged_df,8,60,300*(i+1))
+    walk_wind_vel,walk_gauss,no_wind_vel,no_gauss = generate_siamese_data(walk_merged_df,no_merged_df,4,60,300*(i+1))
 
     walk_wind_vel_list.extend(walk_wind_vel)
     walk_gauss_list.extend(walk_gauss)
@@ -253,8 +253,9 @@ wrong_gauss = np.load(datadir + 'gauss_b_set.npy')
 wrong_wind = np.load(datadir + 'wind_b_set.npy')
 label = np.load(datadir + 'labels.npy')
 
-train_data_len = 70000
-val_data_len = 80000
+
+train_data_len = 3000000
+val_data_len = 3500000
 
 true_gauss_normal = normalization(true_gauss[0:val_data_len])
 true_wind_normal = normalization(true_wind[0:val_data_len])
@@ -268,7 +269,7 @@ valdataset = DummyDataset(true_gauss_normal[train_data_len:val_data_len],true_wi
                         wrong_gauss_normal[train_data_len:val_data_len],wrong_wind_normal[train_data_len:val_data_len],label[train_data_len:val_data_len])
 
 epochs = 50
-batch_size = 128
+batch_size = 1000
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
 

@@ -1,7 +1,7 @@
 import numpy as np
 import sys
 from preprocess_data import preprocess_for_Siamese_Net
-from train import ConvLayer2D,windEncoder,CombinedEncoder,DummyDataset,ContrastiveLoss
+from train import ConvLayer2D,windEncoder,WindEncoderLSTM,CombinedEncoder,CombinedEncoderLSTM,DummyDataset,ContrastiveLoss
 import torch; torch.utils.backcompat.broadcast_warning.enabled = True
 import torch.nn as nn
 import torch.nn.functional as F
@@ -203,7 +203,7 @@ logs_dir = "data/logs/"
 test_walk_merged_df = preprocess.convert_csv_to_mergedcsv('data/csv/climomaster/2023-0420-walk.KAM.CSV','data/csv/ML-logger/2023-0420-walk-gauss.csv')
 test_no_merged_df = preprocess.convert_csv_to_mergedcsv('data/csv/climomaster/2023-0420.KAM.CSV','data/csv/ML-logger/2023-0420-gauss.csv')
 
-test_walk_wind_vel,test_walk_gauss,test_no_wind_vel,test_no_gauss = generate_siamese_data(test_walk_merged_df,test_no_merged_df,8,60,300)  
+test_walk_wind_vel,test_walk_gauss,test_no_wind_vel,test_no_gauss = generate_siamese_data(test_walk_merged_df,test_no_merged_df,4,60,300)  
 
 test_wind_a_set,test_wind_b_set,test_gauss_a_set,test_gauss_b_set,test_labels = generate_npy_from_siamese_data(test_walk_wind_vel,
                                                                                                                test_walk_gauss,
@@ -223,7 +223,7 @@ test_wrong_gauss = np.load(datadir + 'test_gauss_b_set.npy')
 test_wrong_wind = np.load(datadir + 'test_wind_b_set.npy')
 test_label = np.load(datadir + 'test_labels.npy')
 
-test_data_len = 1000
+test_data_len = 30000
 
 true_gauss_normal = normalization(test_true_gauss[0:test_data_len])
 true_wind_normal = normalization(test_true_wind[0:test_data_len])
@@ -260,12 +260,13 @@ file3 = open(logs_dir + 'test_accuracies.txt','w')
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 loss_fn = ContrastiveLoss().to(device)
-model = CombinedEncoder().to(device)
+model = CombinedEncoderLSTM().to(device)
 
 model_path = 'data/checkpoints/model_50.pt'
 model.load_state_dict(torch.load(model_path))
 model.eval()
 
+steps_accu = []
 labels_array = []
 predictions_array = []
 with torch.no_grad():
@@ -275,19 +276,22 @@ with torch.no_grad():
         true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 1)
         wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 1)
         wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 1)
-        true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 3)
-        true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 3)
-        wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 3)
-        wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 3)
+        #true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 3)
+        #true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 3)
+        #wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 3)
+        #wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 3)
         
         genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
         forged_output = model(wrong_gauss_tensor.to(device), wrong_wind_tensor.to(device))
+        
         #-1→1に変換(距離学習を行うため)
-        abs_labels = torch.abs(labels).int()
-        loss,y_pred = loss_fn(genuine_output[0], forged_output[0], abs_labels.to(device))
-        prediction = (y_pred.cpu().detach().numpy()>0.4).astype(int)[0]
-        labels_array.append(int(abs_labels.item()))
-        predictions_array.append(prediction)
+        abs_label = torch.abs(labels).int()
+        loss,y_pred = loss_fn(genuine_output[0], forged_output[0], abs_label.to(device))
+        prediction = (y_pred.cpu().detach().numpy()>0.4).astype(int)
+        accuracy = accuracy_score(abs_label,prediction)
+        steps_accu.append(accuracy)
+        labels_array.append(int(abs_label.item()))
+        predictions_array.append(prediction[0])
 
 
 def accuracy(y_pred, y_true):
@@ -320,6 +324,7 @@ prec = precision(y_pred, y_true)
 rec = recall(y_pred, y_true)
 f1 = f1_score(y_pred, y_true)
 
+print(f"steps Accuracy: {np.mean(steps_accu)}")
 print(f"Accuracy: {acc:.3f}")
 print(f"Precision: {prec:.3f}")
 print(f"Recall: {rec:.3f}")
