@@ -303,10 +303,10 @@ for epoch in range(1, epochs+1):
     model_checkpoints = checkpoints_dir + "model_" + str(epoch) + ".pt"
     for steps, (true_gauss_tensor, true_wind_tensor, wrong_gauss_tensor, wrong_wind_tensor, labels) in tqdm(enumerate(train_dataloader),total=len(train_dataloader)):
         optimizer.zero_grad() 
-        true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 1)
-        true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 1)
-        wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 1)
-        wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 1)
+        true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 2)
+        true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 2)
+        wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 2)
+        wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 2)
         #true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 3)
         #true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 3)
         #wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 3)
@@ -347,10 +347,10 @@ for epoch in range(1, epochs+1):
     model.eval()
     with torch.no_grad():
         for steps, (true_gauss_tensor, true_wind_tensor, wrong_gauss_tensor, wrong_wind_tensor, labels) in tqdm(enumerate(val_dataloader),total=len(val_dataloader)):
-            true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 1)
-            true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 1)
-            wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 1)
-            wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 1)
+            true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 2)
+            true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 2)
+            wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 2)
+            wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 2)
             #true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 3)
             #true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 3)
             #wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 3)

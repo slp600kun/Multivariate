@@ -1,4 +1,4 @@
-Accuracy,0.9814666666666667,
-Precision,0.9681043388429752,
-Recall,0.9958820403825718,
-F1 score,0.9817967522262965,
+Accuracy,0,
+Precision,0,
+Recall,0,
+F1 score,0,

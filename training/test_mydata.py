@@ -1,5 +1,7 @@
 import numpy as np
 import sys
+import os
+import re
 from preprocess_data import preprocess_for_Siamese_Net
 from train import ConvLayer2D,windEncoder,WindEncoderLSTM,CombinedEncoder,CombinedEncoderLSTM,DummyDataset,ContrastiveLoss
 import torch; torch.utils.backcompat.broadcast_warning.enabled = True
@@ -200,8 +202,8 @@ datadir = "data/train-npy/"
 logs_dir = "data/logs/"
 
 #テストデータ(一回分)
-test_walk_merged_df = preprocess.convert_csv_to_mergedcsv('data/csv/climomaster/2023-0420-walk.KAM.CSV','data/csv/ML-logger/2023-0420-walk-gauss.csv')
-test_no_merged_df = preprocess.convert_csv_to_mergedcsv('data/csv/climomaster/2023-0420.KAM.CSV','data/csv/ML-logger/2023-0420-gauss.csv')
+test_walk_merged_df = preprocess.convert_csv_to_mergedcsv('data/csv/climomaster/test/2023-0424-walk2.KAM.CSV','data/csv/ML-logger/test/2023-0424-walk2-gauss.csv')
+test_no_merged_df = preprocess.convert_csv_to_mergedcsv('data/csv/climomaster/test/2023-0424.KAM.CSV','data/csv/ML-logger/test/2023-0424-gauss.csv')
 
 test_walk_wind_vel,test_walk_gauss,test_no_wind_vel,test_no_gauss = generate_siamese_data(test_walk_merged_df,test_no_merged_df,4,60,300)  
 
@@ -216,23 +218,69 @@ np.save(datadir + 'test_gauss_a_set', test_gauss_a_set)
 np.save(datadir + 'test_gauss_b_set', test_gauss_b_set)
 np.save(datadir + 'test_labels', test_labels)
 
-#テストデータの学習
+"""
+climo_walk_files = sorted([f for f in os.listdir('data/csv/climomaster/test') if 'walk' in f])
+gauss_walk_files = sorted([f for f in os.listdir('data/csv/ML-logger/test') if 'walk' in f])
+
+walk_wind_vel_list = []
+walk_gauss_list = []
+no_wind_vel_list = []
+no_gauss_list = []
+
+preprocess = preprocess_for_Siamese_Net()
+
+for i, (climo_csv_path, gauss_csv_path) in enumerate(zip(climo_walk_files,gauss_walk_files)):
+
+    #ファイルパスを指定する
+    climo_walk_path = 'data/csv/climomaster/test/' + climo_csv_path
+    gauss_walk_path = 'data/csv/ML-logger/test/' + gauss_csv_path
+    climo_no_path = re.sub(r'-walk\d+', '', climo_walk_path)
+    gauss_no_path = re.sub(r'-walk\d+', '', gauss_walk_path)
+
+    #dfにする
+    walk_merged_df = preprocess.convert_csv_to_mergedcsv(climo_walk_path,gauss_walk_path)
+    no_merged_df = preprocess.convert_csv_to_mergedcsv(climo_no_path,gauss_no_path)
+
+    walk_wind_vel,walk_gauss,no_wind_vel,no_gauss = generate_siamese_data(walk_merged_df,no_merged_df,4,60,300*(i+1))
+
+    walk_wind_vel_list.extend(walk_wind_vel)
+    walk_gauss_list.extend(walk_gauss)
+    no_wind_vel_list.extend(no_wind_vel)
+    no_gauss_list.extend(no_gauss)
+
+
+wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_siamese_data(walk_wind_vel_list,
+                                                                                      walk_gauss_list,
+                                                                                      no_wind_vel_list,
+                                                                                      no_gauss_list)
+
+#npyファイルに変換
+datadir = "data/train-npy/"
+
+np.save(datadir + 'test_wind_a_set', wind_a_set)
+np.save(datadir + 'test_wind_b_set', wind_b_set)
+np.save(datadir + 'test_gauss_a_set', gauss_a_set)
+np.save(datadir + 'test_gauss_b_set', gauss_b_set)
+np.save(datadir + 'test_labels', labels)
+"""
+
+#テストデータ
 test_true_gauss = np.load(datadir + 'test_gauss_a_set.npy')
 test_true_wind = np.load(datadir + 'test_wind_a_set.npy')
 test_wrong_gauss = np.load(datadir + 'test_gauss_b_set.npy')
 test_wrong_wind = np.load(datadir + 'test_wind_b_set.npy')
 test_label = np.load(datadir + 'test_labels.npy')
 
-test_data_len = 30000
-
-true_gauss_normal = normalization(test_true_gauss[0:test_data_len])
-true_wind_normal = normalization(test_true_wind[0:test_data_len])
-wrong_gauss_normal = normalization(test_wrong_gauss[0:test_data_len])
-wrong_wind_normal = normalization(test_wrong_wind[0:test_data_len])
+test_data_len = 45000
+true_gauss_normal = normalization(test_true_gauss)
+true_wind_normal = normalization(test_true_wind)
+wrong_gauss_normal = normalization(test_wrong_gauss)
+wrong_wind_normal = normalization(test_wrong_wind)
 
 testdataset = DummyDataset(true_gauss_normal[0:test_data_len],true_wind_normal[0:test_data_len],wrong_gauss_normal[0:test_data_len],
                        wrong_wind_normal[0:test_data_len],test_label[0:test_data_len])
-test_dataloader = DataLoader(testdataset, shuffle=False)
+batch_size = 100
+test_dataloader = DataLoader(testdataset, batch_size = batch_size, shuffle=True)
 
 """
 #テストデータの学習(10回分)
@@ -262,36 +310,35 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 loss_fn = ContrastiveLoss().to(device)
 model = CombinedEncoderLSTM().to(device)
 
-model_path = 'data/checkpoints/model_50.pt'
-model.load_state_dict(torch.load(model_path))
+model_path = 'data/checkpoints/model_10.pt'
+checkpoint = torch.load(model_path)
+model.load_state_dict(checkpoint)
 model.eval()
 
 steps_accu = []
 labels_array = []
 predictions_array = []
 with torch.no_grad():
-    for num, (true_gauss_tensor, true_wind_tensor, wrong_gauss_tensor, wrong_wind_tensor, labels) in tqdm(enumerate(test_dataloader),total=len(test_dataloader)):
+    for steps, (true_gauss_tensor, true_wind_tensor, wrong_gauss_tensor, wrong_wind_tensor, labels) in tqdm(enumerate(test_dataloader),total=len(test_dataloader)):
 
-        true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 1)
-        true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 1)
-        wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 1)
-        wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 1)
+        true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 2)
+        true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 2)
+        wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 2)
+        wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 2)
         #true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 3)
         #true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 3)
         #wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 3)
         #wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 3)
-        
-        genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
-        forged_output = model(wrong_gauss_tensor.to(device), wrong_wind_tensor.to(device))
-        
+
+        genuine_output = model.forward(true_gauss_tensor.to(device), true_wind_tensor.to(device))
+        forged_output = model.forward(wrong_gauss_tensor.to(device), wrong_wind_tensor.to(device))
+
         #-1→1に変換(距離学習を行うため)
         abs_label = torch.abs(labels).int()
         loss,y_pred = loss_fn(genuine_output[0], forged_output[0], abs_label.to(device))
         prediction = (y_pred.cpu().detach().numpy()>0.4).astype(int)
         accuracy = accuracy_score(abs_label,prediction)
         steps_accu.append(accuracy)
-        labels_array.append(int(abs_label.item()))
-        predictions_array.append(prediction[0])
 
 
 def accuracy(y_pred, y_true):
@@ -316,19 +363,12 @@ def f1_score(y_pred, y_true):
     r = recall(y_pred, y_true)
     return 2 * p * r / (p + r)
 
-y_true = np.array(labels_array)
-y_pred = np.array(predictions_array)
-
-acc = accuracy(y_pred, y_true)
-prec = precision(y_pred, y_true)
-rec = recall(y_pred, y_true)
-f1 = f1_score(y_pred, y_true)
 
 print(f"steps Accuracy: {np.mean(steps_accu)}")
-print(f"Accuracy: {acc:.3f}")
-print(f"Precision: {prec:.3f}")
-print(f"Recall: {rec:.3f}")
-print(f"F1 score: {f1:.3f}")
 
+acc = 0
+prec = 0
+rec = 0
+f1 = 0
 file3.write("%s,%s,\n%s,%s,\n%s,%s,\n%s,%s,\n" %("Accuracy",str(acc),"Precision",str(prec),"Recall",str(rec),"F1 score",str(f1)))
 file3.close()
