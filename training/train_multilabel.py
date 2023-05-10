@@ -306,7 +306,6 @@ def normalization(data):
     normalized_data = (data - mean) / std
     return normalized_data
 
-"""
 climo_walk_files = sorted([f for f in os.listdir('data/csv/climomaster') if 'walk' in f])
 gauss_walk_files = sorted([f for f in os.listdir('data/csv/ML-logger') if 'walk' in f])
 
@@ -350,7 +349,6 @@ np.save(datadir + 'wind_b_set', wind_b_set)
 np.save(datadir + 'gauss_a_set', gauss_a_set)
 np.save(datadir + 'gauss_b_set', gauss_b_set)
 np.save(datadir + 'labels', labels)
-"""
 
 datadir = "data/train-npy/"
 checkpoints_dir = "data/checkpoints/"
@@ -440,8 +438,8 @@ for epoch in range(1, epochs+1):
         contrastive_loss,y_contrastive_pred = contrastive_lossfn(genuine_output, forged_output, identical_labels.to(device))
 
         #calculate genuine hamming loss
-        genuine_mean_hamming_loss,genuine_multi_label = classifier_lossfn(genuine_output, labels[:,0])
-        forged_mean_hamming_loss,forged_multi_label = classifier_lossfn(forged_output, labels[:,1])
+        genuine_mean_hamming_loss,genuine_multi_label = classifier_lossfn(genuine_output, labels.to(device)[:,0])
+        forged_mean_hamming_loss,forged_multi_label = classifier_lossfn(forged_output, labels.to(device)[:,1])
         pred_labels = torch.cat([genuine_multi_label,forged_multi_label],dim=1)
         hamming_loss = (genuine_mean_hamming_loss + forged_mean_hamming_loss) / 2
 
@@ -451,8 +449,8 @@ for epoch in range(1, epochs+1):
         steps_identifical_accu.append(identifical_accuracy)
 
         steps_hamming_losses.append(hamming_loss.cpu().detach().numpy())
-        classifier_accuracy_0 = accuracy_score(labels[:,0],pred_labels[:,0])
-        classifier_accuracy_1 = accuracy_score(labels[:,1],pred_labels[:,1])
+        classifier_accuracy_0 = accuracy_score(labels.cpu().detach().numpy()[:,0],pred_labels.cpu().detach().numpy()[:,0])
+        classifier_accuracy_1 = accuracy_score(labels.cpu().detach().numpy()[:,1],pred_labels.cpu().detach().numpy()[:,1])
         steps_classifier_accu.append((classifier_accuracy_0 + classifier_accuracy_1)/2)
 
         contrastive_loss.backward()
@@ -480,8 +478,8 @@ for epoch in range(1, epochs+1):
             contrastive_loss,y_contrastive_pred = contrastive_lossfn(genuine_output, forged_output, identical_labels.to(device))
 
             #calculate genuine hamming loss
-            genuine_mean_hamming_loss,genuine_multi_label = classifier_lossfn(genuine_output, labels[:,0])
-            forged_mean_hamming_loss,forged_multi_label = classifier_lossfn(forged_output, labels[:,1])
+            genuine_mean_hamming_loss,genuine_multi_label = classifier_lossfn(genuine_output, labels.to(device)[:,0])
+            forged_mean_hamming_loss,forged_multi_label = classifier_lossfn(forged_output, labels.to(device)[:,1])
             pred_labels = torch.cat([genuine_multi_label,forged_multi_label],dim=1)
             hamming_loss = (genuine_mean_hamming_loss + forged_mean_hamming_loss) / 2
 
@@ -491,13 +489,10 @@ for epoch in range(1, epochs+1):
             steps_identifical_accu.append(identifical_accuracy)
 
             steps_hamming_losses.append(hamming_loss.cpu().detach().numpy())
-            classifier_accuracy_0 = accuracy_score(labels[:,0],pred_labels[:,0])
-            classifier_accuracy_1 = accuracy_score(labels[:,1],pred_labels[:,1])
+            classifier_accuracy_0 = accuracy_score(labels.cpu().detach().numpy()[:,0],pred_labels.cpu().detach().numpy()[:,0])
+            classifier_accuracy_1 = accuracy_score(labels.cpu().detach().numpy()[:,1],pred_labels.cpu().detach().numpy()[:,1])
             steps_classifier_accu.append((classifier_accuracy_0 + classifier_accuracy_1)/2)
 
-            contrastive_loss.backward()
-            optimizer.step()        
-        
         print(f"EPOCH {epoch}| Train: contrastive loss {np.mean(steps_const_losses)}| identifical accuracy {np.mean(steps_identifical_accu)} ")
         print(f"EPOCH {epoch}| Train: hamming loss {np.mean(steps_hamming_losses)}| classifier accuracy {np.mean(steps_classifier_accu)} ")
         const_file2.write("%s , %s, %s, %s, %s, %s\n" % (str(epoch), "train_loss", str(np.mean(steps_const_losses)), "train_accuracy", str(np.mean(steps_identifical_accu)), now_time))
