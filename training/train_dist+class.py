@@ -10,6 +10,7 @@ import torch.optim
 from torch.utils.data import Dataset, DataLoader,TensorDataset
 import matplotlib.pyplot as plt
 from sklearn import svm
+from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -18,6 +19,18 @@ import datetime as dt
 import random
 import pandas as pd
 
+class SVM_for_two_dim(torch.nn.Module):
+    """
+    SVM machine for one dim data
+    """
+    def __init__(self):
+        super(SVM_for_two_dim, self).__init__()
+        self.linear = torch.nn.Linear(2, 1)
+
+    def forward(self, x):
+        x = self.linear(x)
+        return x
+    
 class WindEncoderLSTM(nn.Module):
     def __init__(self):
         super().__init__()
@@ -308,6 +321,7 @@ def normalization(data):
     normalized_data = (data - mean) / std
     return normalized_data
 
+"""
 climo_walk_files = sorted([f for f in os.listdir('data/csv/climomaster') if 'walk' in f])
 gauss_walk_files = sorted([f for f in os.listdir('data/csv/ML-logger') if 'walk' in f])
 
@@ -351,7 +365,7 @@ np.save(datadir + 'wind_b_set', wind_b_set)
 np.save(datadir + 'gauss_a_set', gauss_a_set)
 np.save(datadir + 'gauss_b_set', gauss_b_set)
 np.save(datadir + 'labels', labels)
-
+"""
 
 datadir = "data/train-npy/"
 checkpoints_dir = "data/checkpoints/"
@@ -363,8 +377,8 @@ wrong_gauss = np.load(datadir + 'gauss_b_set.npy')
 wrong_wind = np.load(datadir + 'wind_b_set.npy')
 label = np.load(datadir + 'labels.npy')
 
-train_data_len = 30000
-val_data_len = 35000
+train_data_len = 3000
+val_data_len = 3500
 
 true_gauss_normal = normalization(true_gauss[0:val_data_len])
 true_wind_normal = normalization(true_wind[0:val_data_len])
@@ -377,7 +391,7 @@ traindataset = DummyDataset(true_gauss_normal[0:train_data_len],true_wind_normal
 valdataset = DummyDataset(true_gauss_normal[train_data_len:val_data_len],true_wind_normal[train_data_len:val_data_len],
                         wrong_gauss_normal[train_data_len:val_data_len],wrong_wind_normal[train_data_len:val_data_len],label[train_data_len:val_data_len])
 
-epochs = 50
+epochs = 1
 batch_size = 100
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
@@ -405,17 +419,10 @@ for epoch in range(1, epochs+1):
     model.train()
     #svm学習に必要な配列
     feature_vector_train = []
-    feature_label_train = []
     feature_vector_val = []
-    feature_label_val = []
     
     steps_const_losses = []
     steps_identifical_accu = []
-    steps_hamming_losses = []
-    steps_classifier_accu = []
-    steps_classifier_accu_0 = []
-    steps_classifier_accu_1 = []
-
 
     model_checkpoints = checkpoints_dir + "model_" + str(epoch) + ".pt"
     for steps, (true_gauss_tensor, true_wind_tensor, wrong_gauss_tensor, wrong_wind_tensor, labels) in tqdm(enumerate(train_dataloader),total=len(train_dataloader)):
@@ -440,36 +447,22 @@ for epoch in range(1, epochs+1):
         genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
         forged_output = model(wrong_gauss_tensor.to(device), wrong_wind_tensor.to(device))
         #calculate contrastive loss
+        feature_vector_train.append(genuine_output[1])
         contrastive_loss,y_contrastive_pred = contrastive_lossfn(genuine_output[0], forged_output[0], identical_labels.to(device))
-
-        #calculate genuine hamming loss
-        genuine_mean_hamming_loss,genuine_multi_label = classifier_lossfn(genuine_output[0], labels.to(device)[:,0])
-        forged_mean_hamming_loss,forged_multi_label = classifier_lossfn(forged_output[0], labels.to(device)[:,1])
-        pred_labels = torch.cat([genuine_multi_label,forged_multi_label],dim=1)
-        hamming_loss = (genuine_mean_hamming_loss + forged_mean_hamming_loss) / 2
 
         steps_const_losses.append(contrastive_loss.cpu().detach().numpy())
         identifical_prediction = (y_contrastive_pred.cpu().detach().numpy()>0.4).astype(int)
         identifical_accuracy = accuracy_score(identical_labels,identifical_prediction)
         steps_identifical_accu.append(identifical_accuracy)
 
-        steps_hamming_losses.append(hamming_loss.cpu().detach().numpy())
-        classifier_accuracy_0 = accuracy_score(labels.cpu().detach().numpy()[:,0],pred_labels.cpu().detach().numpy()[:,0])
-        classifier_accuracy_1 = accuracy_score(labels.cpu().detach().numpy()[:,1],pred_labels.cpu().detach().numpy()[:,1])
-        steps_classifier_accu.append((classifier_accuracy_0 + classifier_accuracy_1)/2)
-        steps_classifier_accu_0.append(classifier_accuracy_0)
-        steps_classifier_accu_1.append(classifier_accuracy_1)
-
         contrastive_loss.backward()
         optimizer.step()
 
+    embedding_vector_train = torch.cat(feature_vector_train,dim=0)
+
     now_time = dt.datetime.now()
     print(f"EPOCH {epoch}| Train: contrastive loss {np.mean(steps_const_losses)}| identifical accuracy {np.mean(steps_identifical_accu)} ")
-    print(f"EPOCH {epoch}| Train: hamming loss {np.mean(steps_hamming_losses)}| classifier accuracy {np.mean(steps_classifier_accu)} ")
-    print(f"EPOCH {epoch}| Train: action accuracy {np.mean(steps_classifier_accu_0)}| no action accuracy {np.mean(steps_classifier_accu_1)} ")
     const_file1.write("%s , %s, %s, %s, %s, %s\n" % (str(epoch), "train_loss", str(np.mean(steps_const_losses)), "train_accuracy", str(np.mean(steps_identifical_accu)), now_time))
-    classifier_file1.write("%s , %s, %s, %s, %s, %s, %s, %s,%s,%s\n" % (str(epoch), "train_loss", str(np.mean(steps_hamming_losses)), "train_accuracy", str(np.mean(steps_classifier_accu)),"train_accuracy_action", str(np.mean(steps_classifier_accu_0)),"train_accuracy_no_action", str(np.mean(steps_classifier_accu_1)), now_time))
-    torch.save(model.state_dict(),model_checkpoints)
     scheduler.step()
     model.eval()
     with torch.no_grad():
@@ -478,40 +471,40 @@ for epoch in range(1, epochs+1):
             true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 2)
             wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 2)
             wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 2)
-            #true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 3)
-            #true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 3)
-            #wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 3)
-            #wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 3)
+
+            genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
+            forged_output = model(wrong_gauss_tensor.to(device), wrong_wind_tensor.to(device))
             #calculate contrastive loss
             contrastive_loss,y_contrastive_pred = contrastive_lossfn(genuine_output[0], forged_output[0], identical_labels.to(device))
-
-            #calculate genuine hamming loss
-            genuine_mean_hamming_loss,genuine_multi_label = classifier_lossfn(genuine_output[0], labels.to(device)[:,0])
-            forged_mean_hamming_loss,forged_multi_label = classifier_lossfn(forged_output[0], labels.to(device)[:,1])
-            pred_labels = torch.cat([genuine_multi_label,forged_multi_label],dim=1)
-            hamming_loss = (genuine_mean_hamming_loss + forged_mean_hamming_loss) / 2
-
+            
+            feature_vector_val.append(genuine_output[1])
             steps_const_losses.append(contrastive_loss.cpu().detach().numpy())
             identifical_prediction = (y_contrastive_pred.cpu().detach().numpy()>0.4).astype(int)
             identifical_accuracy = accuracy_score(identical_labels,identifical_prediction)
             steps_identifical_accu.append(identifical_accuracy)
 
-            steps_hamming_losses.append(hamming_loss.cpu().detach().numpy())
-            classifier_accuracy_0 = accuracy_score(labels.cpu().detach().numpy()[:,0],pred_labels.cpu().detach().numpy()[:,0])
-            classifier_accuracy_1 = accuracy_score(labels.cpu().detach().numpy()[:,1],pred_labels.cpu().detach().numpy()[:,1])
-            steps_classifier_accu.append((classifier_accuracy_0 + classifier_accuracy_1)/2)
-
-            steps_classifier_accu_0.append(classifier_accuracy_0)
-            steps_classifier_accu_1.append(classifier_accuracy_1)
+        embedding_vector_val = torch.cat(feature_vector_val,dim=0)
 
         print(f"EPOCH {epoch}| Val: contrastive loss {np.mean(steps_const_losses)}| identifical accuracy {np.mean(steps_identifical_accu)} ")
-        print(f"EPOCH {epoch}| Val: hamming loss {np.mean(steps_hamming_losses)}| classifier accuracy {np.mean(steps_classifier_accu)} ")
-        print(f"EPOCH {epoch}| Val: action accuracy {np.mean(steps_classifier_accu_0)}| no action accuracy {np.mean(steps_classifier_accu_1)} ")
         const_file2.write("%s , %s, %s, %s, %s, %s\n" % (str(epoch), "val_loss", str(np.mean(steps_const_losses)), "val_accuracy", str(np.mean(steps_identifical_accu)), now_time))
-        classifier_file2.write("%s , %s, %s, %s, %s, %s, %s, %s,%s,%s\n" % (str(epoch), "val_loss", str(np.mean(steps_hamming_losses)), "val_accuracy", str(np.mean(steps_classifier_accu)),"val_accuracy_action", str(np.mean(steps_classifier_accu_0)),"val_accuracy_no_action", str(np.mean(steps_classifier_accu_1)), now_time))
 const_file1.close()
-classifier_file1.close()
-
 const_file2.close()
-classifier_file2.close()
 
+#SVMマシンのモデル定義
+svm_model = SVC(C=1.0, kernel='linear')
+#svm_loss_fn = torch.nn.HingeEmbeddingLoss().to(device)
+
+#svm_model.train()
+    
+
+svm_model.fit(embedding_vector_train.cpu().detach().numpy(),torch.tensor(label[0:train_data_len])[:,0].cpu().detach().numpy())
+predictions = svm_model.predict(embedding_vector_val.cpu().detach().numpy())
+def match_rate(arr1, arr2):
+    count = 0
+    for x, y in zip(arr1, arr2):
+        if x == y:
+            count += 1
+    return count / len(arr1)
+rate = match_rate(predictions, label[:,0][train_data_len:val_data_len])
+print(rate)
+print(len(predictions),len(label[:,0][train_data_len:val_data_len]))
