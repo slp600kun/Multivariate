@@ -262,34 +262,30 @@ def generate_npy_from_siamese_data(action_feat1:list,action_feat2:list,not_actio
             for wave_2 in action_feat:
                 feat_a.append(wave_1)
                 feat_b.append(wave_2)
-                feat_y.append(1)
+                feat_y.append([1,1])
+        for wave_1 in action_feat:
+            for wave_2 in not_action_feat:
+                feat_a.append(wave_1)
+                feat_b.append(wave_2)
+                feat_y.append([1,0])
+
+        for wave_1 in not_action_feat:
+            for wave_2 in action_feat:
+                feat_a.append(wave_1)
+                feat_b.append(wave_2)
+                feat_y.append([0,1])
 
         for wave_1 in not_action_feat:
             for wave_2 in not_action_feat:
                 feat_a.append(wave_1)
                 feat_b.append(wave_2)
-                feat_y.append(0)
+                feat_y.append([0,0])
 
         return feat_a,feat_b,feat_y
 
-    feat1_a,feat1_b,feat1_y = labeling_for_action(action_feat1,not_action_feat1)
-    feat2_a,feat2_b,feat2_y = labeling_for_action(action_feat2,not_action_feat2)
+    feat1_a,feat1_b,label = labeling_for_action(action_feat1,not_action_feat1)
+    feat2_a,feat2_b,_ = labeling_for_action(action_feat2,not_action_feat2)
 
-    label=[]
-
-    #labeling
-    for i in range(len(feat2_a)):
-        print(feat1_y[i] ,feat2_y[i] )
-        if i == 1000:
-            sys.exit()
-        if(feat1_y[i] == 1 & feat2_y[i] == 1):
-            label.append([1,1])
-        elif(feat1_y[i] == 1 & feat2_y[i] == 0):
-            label.append([1,0])
-        elif(feat1_y[i] == 0 & feat2_y[i] == 1):
-            label.append([0,1])
-        elif(feat1_y[i] == 0 & feat2_y[i] == 0):
-            label.append([0,0])
 
     # Combine the arrays into a list of tuples
     combined = list(zip(feat1_a, feat1_b, feat2_a, feat2_b, label))
