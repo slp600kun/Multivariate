@@ -71,7 +71,7 @@ class CombinedEncoderLSTM(nn.Module):
         self.wind_enc = WindEncoderLSTM()
         self.dense_1 = nn.Linear(64, 32)
         self.dense_2 = nn.Linear(32, 1)
-        self.dense_3 = nn.Linear(32, 2)
+        self.dense_3 = nn.Linear(32, 4)
         self.bn_block_4 = nn.BatchNorm1d(32)
         self.relu = nn.ReLU()
         self.dropout_1 = nn.Dropout(0.2)
@@ -380,6 +380,15 @@ label = np.load(datadir + 'labels.npy')
 train_data_len = 3000
 val_data_len = 3500
 
+#識別学習に用いるone-hot表現のラベルを作成
+one_hot_labels = torch.zeros(val_data_len, 2, dtype=torch.float)
+for step, genuine_label in enumerate(label[:val_data_len][:,0]):
+    if genuine_label == 1:
+        one_hot_labels[step]=torch.tensor([1,0],dtype=torch.float)
+    if genuine_label == 0:
+        one_hot_labels[step]=torch.tensor([0,1],dtype=torch.float)
+
+
 true_gauss_normal = normalization(true_gauss[0:val_data_len])
 true_wind_normal = normalization(true_wind[0:val_data_len])
 wrong_gauss_normal = normalization(wrong_gauss[0:val_data_len])
@@ -391,7 +400,7 @@ traindataset = DummyDataset(true_gauss_normal[0:train_data_len],true_wind_normal
 valdataset = DummyDataset(true_gauss_normal[train_data_len:val_data_len],true_wind_normal[train_data_len:val_data_len],
                         wrong_gauss_normal[train_data_len:val_data_len],wrong_wind_normal[train_data_len:val_data_len],label[train_data_len:val_data_len])
 
-epochs = 1
+epochs = 2
 batch_size = 100
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
@@ -455,7 +464,7 @@ for epoch in range(1, epochs+1):
         identifical_accuracy = accuracy_score(identical_labels,identifical_prediction)
         steps_identifical_accu.append(identifical_accuracy)
 
-        contrastive_loss.backward()
+        contrastive_loss.backward(retain_graph=True)
         optimizer.step()
 
     embedding_vector_train = torch.cat(feature_vector_train,dim=0)
@@ -490,21 +499,58 @@ for epoch in range(1, epochs+1):
 const_file1.close()
 const_file2.close()
 
-#SVMマシンのモデル定義
-svm_model = SVC(C=1.0, kernel='linear')
-#svm_loss_fn = torch.nn.HingeEmbeddingLoss().to(device)
+# Define the MLP model
+class MLP(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(4, 64)
+        self.fc2 = nn.Linear(64, 128)
+        self.fc3 = nn.Linear(128, 64)
+        self.fc4 = nn.Linear(64, 2)
+        self.relu = nn.ReLU()
+        self.softmax = nn.Softmax(dim=1)
 
-#svm_model.train()
-    
+    def forward(self, x):
+        x = self.relu(self.fc1(x))
+        x = self.relu(self.fc2(x))
+        x = self.relu(self.fc3(x))
+        x = self.softmax(self.fc4(x))
+        return x
 
-svm_model.fit(embedding_vector_train.cpu().detach().numpy(),torch.tensor(label[0:train_data_len])[:,0].cpu().detach().numpy())
-predictions = svm_model.predict(embedding_vector_val.cpu().detach().numpy())
+# Create an instance of the MLP model
+identify_model = MLP().to(device)
+# Define the loss function and optimizer
+criterion = nn.CrossEntropyLoss().to(device)
+identify_optimizer = torch.optim.SGD(identify_model.parameters(), lr=0.01)
+identify_model.train()
+
+train_identify_len = int(train_data_len*0.8)
+
+
+# Train the model for 50 epochs
+num_epochs = 50
+for epoch in range(num_epochs):
+    running_loss = 0.0
+
+    identify_optimizer.zero_grad()
+
+    # Forward pass
+    outputs = identify_model(embedding_vector_train[0:train_identify_len].to(device))
+    loss = criterion(outputs, one_hot_labels[0:train_identify_len].to(device))
+
+    # Backward pass and optimization
+    loss.backward()
+    identify_optimizer.step()
+
+    running_loss += loss.item()
+
 def match_rate(arr1, arr2):
     count = 0
     for x, y in zip(arr1, arr2):
         if x == y:
             count += 1
     return count / len(arr1)
-rate = match_rate(predictions, label[:,0][train_data_len:val_data_len])
+
+rate = match_rate(outputs.cpu().detach().numpy(), one_hot_labels[train_identify_len:train_data_len].cpu().detach().numpy())
 print(rate)
-print(len(predictions),len(label[:,0][train_data_len:val_data_len]))
+print(len(one_hot_labels[train_data_len:val_data_len].cpu().detach().numpy()))
