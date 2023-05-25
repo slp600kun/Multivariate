@@ -59,7 +59,6 @@ class WindEncoderLSTM(nn.Module):
         #output = output.permute(0, 2, 1)
 
         output = self.LSTM_block_3(output)[0][:,-1,:]
-        print(output.shape)
         output = self.bn_block_3(output)
         
         return output
@@ -99,6 +98,68 @@ class CombinedEncoderLSTM(nn.Module):
         #output_two_dim = self.dense_3(output)
 
         return output_one_dim, embedding_vector
+
+class LSTM_embedding(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Define parameters
+        self.LSTM_block_1 = nn.LSTM(input_size=1, hidden_size=128, num_layers=2,batch_first=True,dropout=0.2)
+        self.LSTM_block_2 = nn.LSTM(input_size=128, hidden_size=256, num_layers=2,batch_first=True,dropout=0.2)
+        self.LSTM_block_3 = nn.LSTM(input_size=256, hidden_size=64, num_layers=2,batch_first=True,dropout=0.2)
+        self.bn_block_1 = nn.BatchNorm1d(128)
+        self.bn_block_2 = nn.BatchNorm1d(256)
+        self.bn_block_3 = nn.BatchNorm1d(64)
+
+    def forward(self, input):
+        input = torch.unsqueeze(input,dim=2)
+        output,_ = self.LSTM_block_1(input)
+        output = output.permute(0, 2, 1)
+        output = self.bn_block_1(output)
+        output = output.permute(0, 2, 1)
+
+        output,_ = self.LSTM_block_2(output)
+        output = output.permute(0, 2, 1)
+        output = self.bn_block_2(output)
+        output = output.permute(0, 2, 1)
+
+        output,_ = self.LSTM_block_3(output)
+        output = output.permute(0, 2, 1)
+        output = self.bn_block_3(output)
+        output = output.permute(0, 2, 1)
+        output = output.reshape(output.size(0), -1)
+        return output
+    
+
+class CombinedEncoderLSTM(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Define parameters
+        self.gauss_enc = LSTM_embedding()
+        self.wind_enc = LSTM_embedding()
+        self.dense_1 = nn.Linear(7680, 60)
+        self.dense_2 = nn.Linear(60, 2)
+        self.dense_3 = nn.Linear(60, 32)
+        self.bn_block_4 = nn.BatchNorm1d(60)
+        self.relu = nn.ReLU(False)
+        self.dropout_1 = nn.Dropout(0.2)
+        self.sigmoid = nn.Sigmoid()
+
+        
+    def forward(self, gauss_input, wind_input):
+        gauss_output = self.gauss_enc(gauss_input)
+        wind_output = self.gauss_enc(wind_input)
+        output = torch.cat((gauss_output,wind_output),1)
+        all_output = output
+        
+        output = self.dense_1(output)
+        output = self.relu(output)
+        output = self.dropout_1(output)
+        output = self.bn_block_4(output)
+
+        #距離学習に対する出力
+        output_two_dim = self.dense_2(output)
+    
+        return output_two_dim,all_output
 
 class DummyDataset(Dataset):
     """
@@ -385,8 +446,8 @@ n_gpus = min(2, n_max_gpus)
 print(f'Using {n_gpus} GPUs')
 
 
-train_data_len = 10000
-val_data_len = 12000
+train_data_len = 3000
+val_data_len = 3500
 
 #識別学習に用いるone-hot表現のラベルを作成
 one_hot_labels = torch.zeros(val_data_len, 2, dtype=torch.float)
@@ -444,15 +505,7 @@ for epoch in range(1, epochs+1):
 
     model_checkpoints = checkpoints_dir + "model_" + str(epoch) + ".pt"
     for steps, (true_gauss_tensor, true_wind_tensor, wrong_gauss_tensor, wrong_wind_tensor, labels) in tqdm(enumerate(train_dataloader),total=len(train_dataloader)):
-        optimizer.zero_grad() 
-        true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 2)
-        true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 2)
-        wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 2)
-        wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 2)
-        #true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 3)
-        #true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 3)
-        #wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 3)
-        #wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 3)
+        optimizer.zero_grad()
         
         #generate identical or not identical labels
         identical_labels = torch.zeros(batch_size)
@@ -485,10 +538,6 @@ for epoch in range(1, epochs+1):
     model.eval()
     with torch.no_grad():
         for steps, (true_gauss_tensor, true_wind_tensor, wrong_gauss_tensor, wrong_wind_tensor, labels) in tqdm(enumerate(val_dataloader),total=len(val_dataloader)):
-            true_gauss_tensor = torch.unsqueeze(true_gauss_tensor, dim = 2)
-            true_wind_tensor = torch.unsqueeze(true_wind_tensor, dim = 2)
-            wrong_gauss_tensor = torch.unsqueeze(wrong_gauss_tensor, dim = 2)
-            wrong_wind_tensor = torch.unsqueeze(wrong_wind_tensor, dim = 2)
 
             genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
             forged_output = model(wrong_gauss_tensor.to(device), wrong_wind_tensor.to(device))
@@ -513,28 +562,30 @@ const_file2.close()
 class MLP(nn.Module):
     def __init__(self,num_classes):
         super().__init__()
-        self.fc1 = nn.Linear(128, 256)
-        self.fc2 = nn.Linear(256, 512)
-        self.fc3 = nn.Linear(512, 64)
+        self.fc1 = nn.Linear(7680, 128)
+        #self.fc2 = nn.Linear(256, 512)
+        #self.fc3 = nn.Linear(512, 64)
         self.fc4 = nn.Linear(128,num_classes)
         self.dropout1 = nn.Dropout2d(0.2)
-        self.bn_block_1 = nn.BatchNorm1d(256)
-        self.bn_block_2 = nn.BatchNorm1d(512)
-        self.bn_block_3 = nn.BatchNorm1d(64)
-        self.dropout2 = nn.Dropout2d(0.2)
+        self.bn_block_1 = nn.BatchNorm1d(128)
+        #self.bn_block_2 = nn.BatchNorm1d(512)
+        #self.bn_block_3 = nn.BatchNorm1d(64)
+        #self.dropout2 = nn.Dropout2d(0.2)
         self.relu = nn.PReLU()
-        self.sigmoid = nn.Sigmoid()
+        #self.sigmoid = nn.Sigmoid()
         
     def forward(self, x):
         x = self.relu(self.fc1(x))
         x = self.dropout1(x)
         x = self.bn_block_1(x)
+        """
         x = self.relu(self.fc2(x))
         x = self.dropout2(x)
         x = self.bn_block_2(x)
         x = self.relu(self.fc3(x))
         x = self.dropout2(x)
         x = self.bn_block_3(x)
+        """
         x = self.fc4(x)
         return x
 
@@ -604,12 +655,12 @@ identify_optimizer = torch.optim.SGD(identify_model.parameters(), lr=0.1,momentu
 
 train_identify_len = int(train_data_len*0.8)
 
-min_value = embedding_vector_train[0:10000].min()
-max_value = embedding_vector_train[0:10000].max()
-normalized_embedding_vector = (embedding_vector_train[0:10000] - min_value) / (max_value - min_value)
+min_value = embedding_vector_train[0:train_data_len].min()
+max_value = embedding_vector_train[0:train_data_len].max()
+normalized_embedding_vector = (embedding_vector_train[0:train_data_len] - min_value) / (max_value - min_value)
 
-identify_train_dataset = TensorDataset(normalized_embedding_vector[0:8000],one_hot_labels[0:8000])
-identify_val_dataset = TensorDataset(normalized_embedding_vector[8000:10000],one_hot_labels[8000:10000])
+identify_train_dataset = TensorDataset(normalized_embedding_vector[0:train_identify_len],one_hot_labels[0:train_identify_len])
+identify_val_dataset = TensorDataset(normalized_embedding_vector[train_identify_len:train_data_len],one_hot_labels[train_identify_len:train_data_len])
 
 identify_train_dataloader = DataLoader(identify_train_dataset, batch_size=100, shuffle=True)
 identify_val_dataloader = DataLoader(identify_val_dataset, batch_size=100, shuffle=True)
