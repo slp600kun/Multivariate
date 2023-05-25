@@ -372,8 +372,8 @@ print(f'{n_max_gpus} GPUs available')
 n_gpus = min(2, n_max_gpus)
 print(f'Using {n_gpus} GPUs')
 
-train_data_len = 3000
-val_data_len = 3500
+train_data_len = 30000
+val_data_len = 35000
 
 #識別学習に用いるone-hot表現のラベルを作成
 one_hot_labels = torch.zeros(val_data_len, 2, dtype=torch.float)
@@ -389,12 +389,12 @@ true_wind_normal = normalization(true_wind[0:val_data_len])
 traindataset = DummyDataset(true_gauss_normal[0:train_data_len],true_wind_normal[0:train_data_len],one_hot_labels[0:train_data_len])
 valdataset = DummyDataset(true_gauss_normal[train_data_len:val_data_len],true_wind_normal[train_data_len:val_data_len],one_hot_labels[train_data_len:val_data_len])
 
-epochs = 1
+epochs = 10
 batch_size = 100
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
 
-device = torch.device("cuda 0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 model = CombinedEncoderLSTM()
 model.to(device)
 lossfn = nn.CrossEntropyLoss().to(device)
@@ -409,11 +409,12 @@ device1 = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 identify_model = LSTM()
 identify_model.to(device1)
 # Define the loss function and optimizer
-criterion = nn.CrossEntropyLoss()
+criterion = nn.CrossEntropyLoss().to(device1)
 class_optimizer = torch.optim.SGD(identify_model.parameters(), lr=0.1,momentum=0.9,weight_decay=0.0001)
 
 
 model.train()
+identify_model.train()
 
 torch.set_grad_enabled(True)
 print("STARING TO TRAIN MODEL")
@@ -422,6 +423,7 @@ file2 = open(logs_dir + 'val_LSTMdist+class_accuracies.txt','w')
 for epoch in range(1, epochs+1):
 
     model.train()
+    identify_model.train()
     #識別学習に必要な配列
     train_class_losses =[]
     val_class_losses =[]
@@ -446,10 +448,10 @@ for epoch in range(1, epochs+1):
         class_optimizer.zero_grad()
         # Forward pass
         train_embedding_vector_copy = torch.from_numpy(genuine_output[1].detach().cpu().numpy())
-        outputs = identify_model(train_embedding_vector_copy.to(device))
+        outputs = identify_model(train_embedding_vector_copy.to(device1))
         #calculate loss
         _, y_targets = labels.clone().max(dim=1)
-        class_loss = criterion(outputs.requires_grad_(True), y_targets.long().to(device))
+        class_loss = criterion(outputs.requires_grad_(True), y_targets.long().to(device1))
         train_class_losses.append(class_loss.cpu().detach().numpy())
         #calculate accuracy
         outputs_softmax = torch.softmax(outputs,dim=1)
@@ -457,7 +459,7 @@ for epoch in range(1, epochs+1):
         # one-hot表現に変換
         predicted_labels = torch.zeros(outputs.size(0), 2)
         predicted_labels.scatter_(1, predicted_classes.cpu().unsqueeze(1), 1)
-        correct = (predicted_labels.to(device) == labels.to(device)).sum().item()
+        correct = (predicted_labels.to(device1) == labels.to(device1)).sum().item()
         total = labels.numel()
         accuracy = correct / total
         train_class_accuracies.append(accuracy)
@@ -484,10 +486,10 @@ for epoch in range(1, epochs+1):
             val_steps_losses.append(loss.cpu().detach().numpy())
             # Forward pass
             val_embedding_vector_copy = torch.from_numpy(genuine_output[1].detach().cpu().numpy())
-            val_outputs = identify_model(val_embedding_vector_copy.to(device))
+            val_outputs = identify_model(val_embedding_vector_copy.to(device1))
             #calculate loss
             _, y_val_targets = labels.clone().max(dim=1)
-            val_loss = criterion(val_outputs, y_val_targets.long().to(device))
+            val_loss = criterion(val_outputs, y_val_targets.long().to(device1))
             val_class_losses.append(val_loss.cpu().detach().numpy())
             #calculate accuracy
             val_outputs_softmax = torch.softmax(val_outputs,dim=1)
@@ -495,7 +497,7 @@ for epoch in range(1, epochs+1):
             # one-hot表現に変換
             val_predicted_labels = torch.zeros(val_outputs.size(0), 2)
             val_predicted_labels.scatter_(1, val_predicted_classes.cpu().unsqueeze(1), 1)
-            val_correct = (val_predicted_labels.to(device) == labels.to(device)).sum().item()
+            val_correct = (val_predicted_labels.to(device1) == labels.to(device1)).sum().item()
             val_total = labels.numel()
             val_accuracy = val_correct / val_total
             val_class_accuracies.append(val_accuracy)
@@ -562,12 +564,20 @@ test_wrong_wind = np.load(datadir + 'test_wind_b_set.npy')
 test_label = np.load(datadir + 'test_labels.npy')
 
 test_data_len = 450
+#識別学習に用いるone-hot表現のラベルを作成
+one_hot_testlabels = torch.zeros(test_data_len, 2, dtype=torch.float)
+for step, genuine_label in enumerate(test_label[:test_data_len][:,0]):
+    if genuine_label == 1:
+        one_hot_testlabels[step]=torch.tensor([1,0],dtype=torch.float)
+    if genuine_label == 0:
+        one_hot_testlabels[step]=torch.tensor([0,1],dtype=torch.float)
+
 true_gauss_normal = normalization(test_true_gauss)
 true_wind_normal = normalization(test_true_wind)
 wrong_gauss_normal = normalization(test_wrong_gauss)
 wrong_wind_normal = normalization(test_wrong_wind)
 
-testdataset = DummyDataset(true_gauss_normal[0:test_data_len],true_wind_normal[0:test_data_len],test_label[0:test_data_len])
+testdataset = DummyDataset(true_gauss_normal[0:test_data_len],true_wind_normal[0:test_data_len],one_hot_testlabels[0:test_data_len])
 batch_size = 10
 test_dataloader = DataLoader(testdataset, batch_size = batch_size, shuffle=True)
 
@@ -588,10 +598,10 @@ with torch.no_grad():
 
         # Forward pass
         val_embedding_vector_copy = torch.from_numpy(genuine_output[1].detach().cpu().numpy())
-        val_outputs = identify_model(val_embedding_vector_copy.to(device))
+        val_outputs = identify_model(val_embedding_vector_copy.to(device1))
         #calculate loss
         _, y_val_targets = labels.clone().max(dim=1)
-        val_loss = criterion(val_outputs, y_val_targets.long().to(device))
+        val_loss = criterion(val_outputs, y_val_targets.long().to(device1))
         val_class_losses.append(val_loss.cpu().detach().numpy())
         #calculate accuracy
         val_outputs_softmax = torch.softmax(val_outputs,dim=1)
@@ -599,7 +609,7 @@ with torch.no_grad():
         # one-hot表現に変換
         val_predicted_labels = torch.zeros(val_outputs.size(0), 2)
         val_predicted_labels.scatter_(1, val_predicted_classes.cpu().unsqueeze(1), 1)
-        val_correct = (val_predicted_labels.to(device) == labels.to(device)).sum().item()
+        val_correct = (val_predicted_labels.to(device1) == labels.to(device1)).sum().item()
         val_total = labels.numel()
         val_accuracy = val_correct / val_total
         test_class_accuracies.append(val_accuracy)

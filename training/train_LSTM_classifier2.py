@@ -68,7 +68,7 @@ class CombinedEncoderLSTM(nn.Module):
         # Define parameters
         self.gauss_enc = LSTM_embedding()
         self.wind_enc = LSTM_embedding()
-        self.dense_1 = nn.Linear(7680, 60)
+        self.dense_1 = nn.Linear(15360, 60)
         self.dense_2 = nn.Linear(60, 2)
         self.dense_3 = nn.Linear(60, 32)
         self.bn_block_4 = nn.BatchNorm1d(60)
@@ -347,8 +347,8 @@ print(f'{n_max_gpus} GPUs available')
 n_gpus = min(2, n_max_gpus)
 print(f'Using {n_gpus} GPUs')
 
-train_data_len = 3000
-val_data_len = 3500
+train_data_len = 10000
+val_data_len = 12000
 
 #識別学習に用いるone-hot表現のラベルを作成
 one_hot_labels = torch.zeros(val_data_len, 2, dtype=torch.float)
@@ -364,7 +364,7 @@ true_wind_normal = normalization(true_wind[0:val_data_len])
 traindataset = DummyDataset(true_gauss_normal[0:train_data_len],true_wind_normal[0:train_data_len],one_hot_labels[0:train_data_len])
 valdataset = DummyDataset(true_gauss_normal[train_data_len:val_data_len],true_wind_normal[train_data_len:val_data_len],one_hot_labels[train_data_len:val_data_len])
 
-epochs = 10
+epochs = 50
 batch_size = 100
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
