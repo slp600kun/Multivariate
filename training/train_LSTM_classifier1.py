@@ -375,8 +375,8 @@ print(f'{n_max_gpus} GPUs available')
 n_gpus = min(2, n_max_gpus)
 print(f'Using {n_gpus} GPUs')
 
-train_data_len = 100000
-val_data_len = 120000
+train_data_len = 30000
+val_data_len = 35000
 
 #識別学習に用いるone-hot表現のラベルを作成
 one_hot_labels = torch.zeros(val_data_len, 2, dtype=torch.float)
@@ -495,11 +495,8 @@ testdataset = DummyDataset(true_gauss_normal[0:test_data_len],true_wind_normal[0
 batch_size = 10
 test_dataloader = DataLoader(testdataset, batch_size = batch_size, shuffle=True)
 
-dist_model_path = 'data/checkpoints/dist_model_10.pt'
-class_model_path = 'data/checkpoints/class_model_10.pt'
-dist_checkpoint = torch.load(dist_model_path)
-class_checkpoint = torch.load(class_model_path)
-model.load_state_dict(dist_checkpoint)
+model_path = 'data/checkpoints/model_10.pt'
+checkpoint = torch.load(model_path)
 model.eval()
 
 test_class_accuracies = []
@@ -517,7 +514,7 @@ with torch.no_grad():
         correct = (predicted_labels.to(device) == labels.to(device)).sum().item()
         total = labels.numel()
         accuracy = correct / total
-        val_steps_accu.append(accuracy)
+        test_class_accuracies.append(accuracy)
 
     
 print(f"steps Accuracy: {np.mean(test_class_accuracies)}")
