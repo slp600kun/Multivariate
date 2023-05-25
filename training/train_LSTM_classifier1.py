@@ -392,7 +392,7 @@ true_wind_normal = normalization(true_wind[0:val_data_len])
 traindataset = DummyDataset(true_gauss_normal[0:train_data_len],true_wind_normal[0:train_data_len],one_hot_labels[0:train_data_len])
 valdataset = DummyDataset(true_gauss_normal[train_data_len:val_data_len],true_wind_normal[train_data_len:val_data_len],one_hot_labels[train_data_len:val_data_len])
 
-epochs = 50
+epochs = 10
 batch_size = 100
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
@@ -444,6 +444,7 @@ for epoch in range(1, epochs+1):
     now_time = dt.datetime.now()
     print(f"EPOCH {epoch}| Train: loss {np.mean(steps_losses)}| train accuracy {np.mean(train_steps_accu)} ")
     file1.write("%s , %s, %s, %s, %s, %s\n" % (str(epoch), "train_loss", str(np.mean(steps_losses)), "train_accuracy", str(np.mean(train_steps_accu)), now_time))
+    torch.save(model.state_dict(),model_checkpoints)
     scheduler.step()
     model.eval()
     with torch.no_grad():
@@ -468,3 +469,55 @@ for epoch in range(1, epochs+1):
         file2.write("%s , %s, %s, %s, %s, %s\n" % (str(epoch), "val_loss", str(np.mean(steps_losses)), "val_accuracy", str(np.mean(val_steps_accu)), now_time))
 file1.close()
 file2.close()
+
+#テストデータ
+test_true_gauss = np.load(datadir + 'test_gauss_a_set.npy')
+test_true_wind = np.load(datadir + 'test_wind_a_set.npy')
+test_wrong_gauss = np.load(datadir + 'test_gauss_b_set.npy')
+test_wrong_wind = np.load(datadir + 'test_wind_b_set.npy')
+test_label = np.load(datadir + 'test_labels.npy')
+
+test_data_len = 450
+#識別学習に用いるone-hot表現のラベルを作成
+one_hot_testlabels = torch.zeros(test_data_len, 2, dtype=torch.float)
+for step, genuine_label in enumerate(test_label[:test_data_len][:,0]):
+    if genuine_label == 1:
+        one_hot_testlabels[step]=torch.tensor([1,0],dtype=torch.float)
+    if genuine_label == 0:
+        one_hot_testlabels[step]=torch.tensor([0,1],dtype=torch.float)
+
+true_gauss_normal = normalization(test_true_gauss)
+true_wind_normal = normalization(test_true_wind)
+wrong_gauss_normal = normalization(test_wrong_gauss)
+wrong_wind_normal = normalization(test_wrong_wind)
+
+testdataset = DummyDataset(true_gauss_normal[0:test_data_len],true_wind_normal[0:test_data_len],one_hot_testlabels[0:test_data_len])
+batch_size = 10
+test_dataloader = DataLoader(testdataset, batch_size = batch_size, shuffle=True)
+
+dist_model_path = 'data/checkpoints/dist_model_10.pt'
+class_model_path = 'data/checkpoints/class_model_10.pt'
+dist_checkpoint = torch.load(dist_model_path)
+class_checkpoint = torch.load(class_model_path)
+model.load_state_dict(dist_checkpoint)
+model.eval()
+
+test_class_accuracies = []
+predictions_array = []
+with torch.no_grad():
+    for steps, (true_gauss_tensor, true_wind_tensor, labels) in tqdm(enumerate(test_dataloader),total=len(test_dataloader)):
+        genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
+
+        #calculate accuracy
+        outputs_softmax = torch.softmax(genuine_output,dim=1)
+        predicted_classes = torch.argmax(outputs_softmax, dim=1)
+        # one-hot表現に変換
+        predicted_labels = torch.zeros(genuine_output.size(0), 2)
+        predicted_labels.scatter_(1, predicted_classes.cpu().unsqueeze(1), 1)
+        correct = (predicted_labels.to(device) == labels.to(device)).sum().item()
+        total = labels.numel()
+        accuracy = correct / total
+        val_steps_accu.append(accuracy)
+
+    
+print(f"steps Accuracy: {np.mean(test_class_accuracies)}")
