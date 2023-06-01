@@ -18,6 +18,7 @@ from tqdm.auto import tqdm
 import datetime as dt
 import random
 import pandas as pd
+from sklearn.manifold import TSNE
 torch.utils.backcompat.broadcast_warning.enabled = True
 
 preprocess = preprocess_for_Siamese_Net()
@@ -167,7 +168,7 @@ class DummyDataset(Dataset):
     def __getitem__(self, idx):
         true_gauss_tensor = torch.tensor(self.true_gauss[idx],dtype=torch.float)
         true_wind_tensor = torch.tensor(self.true_wind[idx],dtype=torch.float) # this is complete dataset
-        labels = torch.tensor(self.labels[idx],dtype=torch.float)
+        labels = self.labels[idx].clone().detach()
         return true_gauss_tensor,true_wind_tensor,labels
         
 class HammingLoss(torch.nn.Module):
@@ -374,11 +375,11 @@ class MLP(nn.Module):
         self.fc2 = nn.Linear(128, 512)
         self.fc3 = nn.Linear(512, 128)
         self.fc4 = nn.Linear(128,num_classes)
-        self.dropout1 = nn.Dropout2d(0.2)
+        self.dropout1 = nn.Dropout(0.2)
         self.bn_block_1 = nn.BatchNorm1d(128)
         self.bn_block_2 = nn.BatchNorm1d(512)
         self.bn_block_3 = nn.BatchNorm1d(128)
-        self.dropout2 = nn.Dropout2d(0.2)
+        self.dropout2 = nn.Dropout(0.2)
         self.relu = nn.PReLU()
         #self.sigmoid = nn.Sigmoid()
 
@@ -394,6 +395,38 @@ class MLP(nn.Module):
         x = self.bn_block_3(x)
         x = self.fc4(x)
         return x
+
+# 入力データをt-SNEで可視化
+def visualize_tsne(data, labels, title, output_file=None):
+    tsne = TSNE(n_components=2, random_state=42)
+    tsne_data = tsne.fit_transform(data)
+
+    plt.figure(figsize=(10, 8))
+    plt.scatter(tsne_data[:, 0], tsne_data[:, 1], c=labels, cmap='viridis')
+    plt.title(title)
+    plt.colorbar()
+    if output_file:
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        plt.savefig(output_file)
+        plt.close()
+    else:
+        plt.show()
+
+# モデルの推論結果と入力データを可視化
+def visualize_embedding(true_gauss_tensor, true_wind_tensor, genuine_output, labels, output_file1, output_file2):
+    # 入力データをnumpy配列に変換
+    gauss_data = true_gauss_tensor.detach().cpu().numpy()
+    wind_data = true_wind_tensor.detach().cpu().numpy()
+
+    # 入力データとgenuine_outputを結合
+    input_data = np.concatenate((gauss_data, wind_data), axis=1)
+    genuine_output_data = genuine_output.detach().cpu().numpy()
+
+    # 入力データのt-SNE可視化
+    visualize_tsne(input_data, labels, 'Input Data', output_file1)
+
+    # genuine_outputのt-SNE可視化
+    visualize_tsne(genuine_output_data, labels, 'genuine_output' , output_file2)
 
 """
 climo_walk_files = sorted([f for f in os.listdir('data/csv/climomaster') if 'walk' in f])
@@ -455,8 +488,8 @@ print(f'{n_max_gpus} GPUs available')
 n_gpus = min(2, n_max_gpus)
 print(f'Using {n_gpus} GPUs')
 
-train_data_len = 300000
-test_data_len = 50000
+train_data_len = 30000
+test_data_len = 5000
 val_data_len = train_data_len + test_data_len
 
 #識別学習に用いるone-hot表現のラベルを作成
@@ -500,7 +533,7 @@ traindataset = DummyDataset(true_gauss_normal,true_wind_normal,one_hot_labels[0:
 valdataset = DummyDataset(val_gauss_normal,val_wind_normal,one_hot_labels[train_data_len:val_data_len])
 
 epochs = 100
-batch_size = 1000
+batch_size = 100
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
 
@@ -557,6 +590,10 @@ for epoch in range(1, epochs+1):
         _, y_targets = labels.clone().max(dim=1)
         train_cross_en_loss = criterion(outputs.requires_grad_(True), y_targets.long().to(device1))
         
+        output_path1 = "plot/data-tSNE.png"
+        output_path2 = "plot/vector-tSNE.png"
+        if epoch==10:
+            visualize_embedding(true_gauss_tensor, true_wind_tensor, genuine_output[1], y_targets, output_path1 ,output_path2)
         #calculate accuracy
         outputs_softmax = torch.softmax(outputs,dim=1)
         predicted_classes = torch.argmax(outputs_softmax, dim=1)

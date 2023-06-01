@@ -375,8 +375,8 @@ print(f'{n_max_gpus} GPUs available')
 n_gpus = min(2, n_max_gpus)
 print(f'Using {n_gpus} GPUs')
 
-train_data_len = 30000
-val_data_len = 35000
+train_data_len = 1000000
+val_data_len = 1200000
 
 #識別学習に用いるone-hot表現のラベルを作成
 one_hot_labels = torch.zeros(val_data_len, 2, dtype=torch.float)
@@ -392,8 +392,8 @@ true_wind_normal = normalization(true_wind[0:val_data_len])
 traindataset = DummyDataset(true_gauss_normal[0:train_data_len],true_wind_normal[0:train_data_len],one_hot_labels[0:train_data_len])
 valdataset = DummyDataset(true_gauss_normal[train_data_len:val_data_len],true_wind_normal[train_data_len:val_data_len],one_hot_labels[train_data_len:val_data_len])
 
-epochs = 10
-batch_size = 100
+epochs = 1
+batch_size = 1000
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
 
@@ -477,7 +477,7 @@ test_wrong_gauss = np.load(datadir + 'test_gauss_b_set.npy')
 test_wrong_wind = np.load(datadir + 'test_wind_b_set.npy')
 test_label = np.load(datadir + 'test_labels.npy')
 
-test_data_len = 450
+test_data_len = 50000
 #識別学習に用いるone-hot表現のラベルを作成
 one_hot_testlabels = torch.zeros(test_data_len, 2, dtype=torch.float)
 for step, genuine_label in enumerate(test_label[:test_data_len][:,0]):
@@ -492,7 +492,7 @@ wrong_gauss_normal = normalization(test_wrong_gauss)
 wrong_wind_normal = normalization(test_wrong_wind)
 
 testdataset = DummyDataset(true_gauss_normal[0:test_data_len],true_wind_normal[0:test_data_len],one_hot_testlabels[0:test_data_len])
-batch_size = 10
+batch_size = 100
 test_dataloader = DataLoader(testdataset, batch_size = batch_size, shuffle=True)
 
 model_path = 'data/checkpoints/model_10.pt'

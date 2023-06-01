@@ -378,8 +378,8 @@ print(f'{n_max_gpus} GPUs available')
 n_gpus = min(2, n_max_gpus)
 print(f'Using {n_gpus} GPUs')
 
-train_data_len = 3000
-val_data_len = 3500
+train_data_len = 30000
+val_data_len = 35000
 
 #識別学習に用いるone-hot表現のラベルを作成
 one_hot_labels = torch.zeros(val_data_len, 2, dtype=torch.float)
@@ -450,6 +450,8 @@ for epoch in range(1, epochs+1):
         #calculate contrastive loss
         loss = lossfn(genuine_output[0], labels.to(device))
         train_steps_losses.append(loss.cpu().detach().numpy())
+        loss.backward()
+        optimizer.step()
 
         class_optimizer.zero_grad()
         # Forward pass
@@ -459,6 +461,7 @@ for epoch in range(1, epochs+1):
         _, y_targets = labels.clone().max(dim=1)
         class_loss = criterion(outputs.requires_grad_(True), y_targets.long().to(device1))
         train_class_losses.append(class_loss.cpu().detach().numpy())
+        
         #calculate accuracy
         outputs_softmax = torch.softmax(outputs,dim=1)
         predicted_classes = torch.argmax(outputs_softmax, dim=1)
@@ -569,7 +572,7 @@ test_wrong_gauss = np.load(datadir + 'test_gauss_b_set.npy')
 test_wrong_wind = np.load(datadir + 'test_wind_b_set.npy')
 test_label = np.load(datadir + 'test_labels.npy')
 
-test_data_len = 450
+test_data_len = 45000
 #識別学習に用いるone-hot表現のラベルを作成
 one_hot_testlabels = torch.zeros(test_data_len, 2, dtype=torch.float)
 for step, genuine_label in enumerate(test_label[:test_data_len][:,0]):
