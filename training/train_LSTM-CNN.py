@@ -455,8 +455,8 @@ print(f'{n_max_gpus} GPUs available')
 n_gpus = min(2, n_max_gpus)
 print(f'Using {n_gpus} GPUs')
 
-train_data_len = 30000
-val_data_len = 35000
+train_data_len = 3000
+val_data_len = 3500
 
 #識別学習に用いるone-hot表現のラベルを作成
 one_hot_labels = torch.zeros(val_data_len, 2, dtype=torch.float)
@@ -479,8 +479,8 @@ scaled_wind = scaler_wind.transform(true_wind)
 traindataset = DummyDataset(scaled_gauss[0:train_data_len],scaled_wind[0:train_data_len],one_hot_labels[0:train_data_len])
 valdataset = DummyDataset(scaled_gauss[train_data_len:val_data_len],scaled_wind[train_data_len:val_data_len],one_hot_labels[train_data_len:val_data_len])
 
-epochs = 10
-batch_size = 1000
+epochs = 1
+batch_size = 100
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
 
@@ -511,35 +511,62 @@ file2 = open(logs_dir + 'val_LSTM-CNN_accuracies.txt','w')
 for epoch in range(1, epochs+1):
 
     model.train()
-    identify_model.train()
-    #識別学習に必要な配列
-    train_class_accuracies = []
-    val_class_accuracies = []
-    
+    #距離学習に必要な配列
     train_cont_losses = []
-    train_cross_en_losses = []
     val_cont_losses = []
-    val_cross_en_losses = []
-    train_steps_accu = []
-    val_steps_accu = []
+    embedding_vector = []
+ 
 
     dist_model_checkpoints = checkpoints_dir + "dist_model_" + str(epoch) + ".pt"
-    class_model_checkpoints = checkpoints_dir + "class_model_" + str(epoch) + ".pt"
     for steps, (train_gauss_tensor, train_wind_tensor, train_labels) in tqdm(enumerate(train_dataloader),total=len(train_dataloader)):        
 
         cont_optimizer.zero_grad() 
         train_genuine_output = model(train_gauss_tensor.to(device), train_wind_tensor.to(device))
         #calculate contrastive loss
         train_cont_loss = lossfn(train_genuine_output[0], train_labels.to(device),device)
-        train_cont_losses.append(train_cont_loss.cpu().detach().numpy())
-        
-        train_cont_loss.backward(retain_graph=True)
+        embedding_vector.append(train_genuine_output[1].detach())
+
+        train_cont_losses.append(train_cont_loss.cpu().detach().numpy())        
+        train_cont_loss.backward()
         cont_optimizer.step()
 
+    print(f"EPOCH {epoch}| Train: loss {np.mean(train_cont_losses)}") 
+    torch.save(model.state_dict(),dist_model_checkpoints)
+
+    cont_scheduler.step()
+    model.eval()
+    with torch.no_grad():
+        for steps, (val_gauss_tensor, val_wind_tensor, val_labels) in tqdm(enumerate(val_dataloader),total=len(val_dataloader)):
+            
+            val_genuine_output = model(val_gauss_tensor.to(device), val_wind_tensor.to(device))
+            val_cont_loss = lossfn(val_genuine_output[0], val_labels.to(device),device)
+            embedding_vector.append(train_genuine_output[1].detach())
+
+            val_cont_losses.append(val_cont_loss.cpu().detach().numpy())
+
+        
+        embedding_vectors = torch.cat(embedding_vector,dim=0)
+        print(f"EPOCH {epoch}| Val: dist loss {np.mean(val_cont_losses)}")
+
+identify_train_dataset = TensorDataset(embedding_vectors[0:train_data_len],one_hot_labels[0:train_data_len])
+identify_val_dataset = TensorDataset(embedding_vectors[train_data_len:val_data_len],one_hot_labels[train_data_len:val_data_len])
+
+identify_train_dataloader = DataLoader(identify_train_dataset, batch_size=100, shuffle=True)
+identify_val_dataloader = DataLoader(identify_val_dataset, batch_size=100, shuffle=True)
+
+for epoch in range(1, epochs+1):
+    identify_model.train()
+
+    train_cross_en_losses = []
+    val_cross_en_losses = []
+    train_class_accuracies = []
+    val_class_accuracies = []
+    class_model_checkpoints = checkpoints_dir + "class_model_" + str(epoch) + ".pt"
+
+    for steps, (train_embedding_vector, train_labels) in tqdm(enumerate(identify_train_dataloader),total=len(identify_train_dataloader)):
         cross_en_optimizer.zero_grad()
         # Forward pass
-        train_genuine_output_numpy = train_genuine_output[1].detach().cpu().numpy()
-        train_outputs = identify_model(torch.from_numpy(train_genuine_output_numpy).to(device1))
+        train_outputs = identify_model(train_embedding_vector.to(device1))
         #calculate cross entropy loss
         _, train_y_targets = train_labels.clone().max(dim=1)
         train_cross_en_loss = criterion(train_outputs.requires_grad_(True), train_y_targets.long().to(device1))
@@ -559,22 +586,14 @@ for epoch in range(1, epochs+1):
         cross_en_optimizer.step()
 
     now_time = dt.datetime.now()
-    print(f"EPOCH {epoch}| Train: loss {np.mean(train_cont_losses)} | class loss  {np.mean(train_cross_en_losses)}| train accuracy {np.mean(train_class_accuracies)} ")
-    file1.write("%s, %s, %s, %s, %s, %s, %s, %s\n" % (str(epoch), "train_cont_loss", str(np.mean(train_cont_losses)), "train_cross_en_loss", str(np.mean(train_cross_en_losses)), "train_accuracy", str(np.mean(train_class_accuracies)), now_time))
-    torch.save(model.state_dict(),dist_model_checkpoints)
+    print(f"EPOCH {epoch}| Train: class loss  {np.mean(train_cross_en_losses)}| train accuracy {np.mean(train_class_accuracies)} ")
+    file1.write("%s, %s, %s, %s, %s, %s\n" % (str(epoch), "train_cross_en_loss", str(np.mean(train_cross_en_losses)), "train_accuracy", str(np.mean(train_class_accuracies)), now_time))
     torch.save(identify_model.state_dict(),class_model_checkpoints)
 
-    cont_scheduler.step()
     cross_en_scheduler.step()
-    model.eval()
     identify_model.eval()
     with torch.no_grad():
-        for steps, (val_gauss_tensor, val_wind_tensor, val_labels) in tqdm(enumerate(val_dataloader),total=len(val_dataloader)):
-            
-            val_genuine_output = model(val_gauss_tensor.to(device), val_wind_tensor.to(device))
-            val_cont_loss = lossfn(val_genuine_output[0], val_labels.to(device),device)
-            val_cont_losses.append(val_cont_loss.cpu().detach().numpy())
-
+        for steps, (val_embedding_vector, val_labels) in tqdm(enumerate(identify_val_dataloader),total=len(identify_val_dataloader)):
             # Forward pass
 
             val_genuine_output_numpy = val_genuine_output[1].detach().cpu().numpy()
@@ -594,9 +613,8 @@ for epoch in range(1, epochs+1):
             val_accuracy = val_correct / val_total
             val_class_accuracies.append(val_accuracy)
 
-
-        print(f"EPOCH {epoch}| Val: dist loss {np.mean(val_cont_losses)}| class loss  {np.mean(val_cross_en_losses)} | val accuracy {np.mean(val_class_accuracies)} ")
-        file2.write("%s, %s, %s, %s, %s, %s, %s, %s\n" % (str(epoch), "val_cont_loss", str(np.mean(val_cont_losses)) ,"val_cross_en_loss", str(np.mean(val_cross_en_losses)), "val_accuracy", str(np.mean(val_class_accuracies)), now_time))
+        print(f"EPOCH {epoch}| Val: class loss  {np.mean(val_cross_en_losses)} | val accuracy {np.mean(val_class_accuracies)} ")
+        file2.write("%s, %s, %s, %s, %s, %s\n" % (str(epoch), "val_cross_en_loss", str(np.mean(val_cross_en_losses)), "val_accuracy", str(np.mean(val_class_accuracies)), now_time))
 file1.close()
 file2.close()
 
@@ -671,8 +689,8 @@ testdataset = DummyDataset(test_true_gauss[0:test_data_len] ,test_true_wind[0:te
 batch_size = 1000
 test_dataloader = DataLoader(testdataset, batch_size = batch_size, shuffle=True)
 
-dist_model_path = 'data/checkpoints/dist_model_10.pt'
-class_model_path = 'data/checkpoints/class_model_10.pt'
+dist_model_path = 'data/checkpoints/dist_model_1.pt'
+class_model_path = 'data/checkpoints/class_model_1.pt'
 dist_checkpoint = torch.load(dist_model_path)
 class_checkpoint = torch.load(class_model_path)
 model.load_state_dict(dist_checkpoint)
@@ -680,17 +698,23 @@ model.eval()
 identify_model.load_state_dict(class_checkpoint)
 identify_model.eval()
 
+test_embedding_vector = []
 test_class_accuracies = []
 predictions_array = []
 with torch.no_grad():
     for steps, (test_gauss_tensor, test_wind_tensor, test_labels) in tqdm(enumerate(test_dataloader),total=len(test_dataloader)):
         genuine_output = model(test_gauss_tensor.to(device), test_wind_tensor.to(device))
-
+        test_embedding_vector.append(train_genuine_output[1].detach())
         # Forward pass
-        test_outputs = identify_model(genuine_output[1].to(device1))
+    test_embedding_vectors = torch.cat(test_embedding_vector,dim=0)   
+    
+    identify_test_dataset = TensorDataset(test_embedding_vectors[0:train_data_len],one_hot_testlabels[0:train_data_len])
+    identify_test_dataloader = DataLoader(identify_train_dataset, batch_size=100, shuffle=True)
+
+    for steps, (test_embedding_vector, test_labels) in tqdm(enumerate(identify_test_dataloader),total=len(identify_test_dataloader)):
+        test_outputs = identify_model(test_embedding_vector.to(device1))
         #calculate loss
         _, y_test_targets = test_labels.clone().max(dim=1)
-        test_loss = criterion(test_outputs, y_test_targets.long().to(device1))
         #calculate accuracy
         test_outputs_softmax = torch.softmax(test_outputs,dim=1)
         test_predicted_classes = torch.argmax(test_outputs_softmax, dim=1)
