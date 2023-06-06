@@ -455,9 +455,8 @@ print(f'{n_max_gpus} GPUs available')
 n_gpus = min(2, n_max_gpus)
 print(f'Using {n_gpus} GPUs')
 
-train_data_len = 300000
-test_data_len = 50000
-val_data_len = train_data_len + test_data_len
+train_data_len = 30000
+val_data_len = 35000
 
 #識別学習に用いるone-hot表現のラベルを作成
 one_hot_labels = torch.zeros(val_data_len, 2, dtype=torch.float)
@@ -467,39 +466,20 @@ for step, genuine_label in enumerate(label[:val_data_len][:,0]):
     if genuine_label == 0:
         one_hot_labels[step]=torch.tensor([0,1],dtype=torch.float)
 
-#テストデータ
-test_true_gauss = np.load(datadir + 'test_gauss_a_set.npy')
-test_true_wind = np.load(datadir + 'test_wind_a_set.npy')
-test_wrong_gauss = np.load(datadir + 'test_gauss_b_set.npy')
-test_wrong_wind = np.load(datadir + 'test_wind_b_set.npy')
-test_label = np.load(datadir + 'test_labels.npy')
 
-#識別学習に用いるone-hot表現のラベルを作成
-one_hot_testlabels = torch.zeros(test_data_len, 2, dtype=torch.float)
-for step, genuine_label in enumerate(test_label[:test_data_len][:,0]):
-    if genuine_label == 1:
-        one_hot_testlabels[step]=torch.tensor([1,0],dtype=torch.float)
-    if genuine_label == 0:
-        one_hot_testlabels[step]=torch.tensor([0,1],dtype=torch.float)
-"""
-concat_gauss = normalization(np.concatenate((true_gauss[0:train_data_len],test_true_gauss[0:test_data_len]),axis=0))
-concat_wind = normalization(np.concatenate((true_wind[0:train_data_len],test_true_wind[0:test_data_len]),axis=0))
-true_gauss_normal = concat_gauss[0:train_data_len]
-true_wind_normal = concat_wind[0:train_data_len]
-test_gauss_normal = concat_gauss[train_data_len:train_data_len + test_data_len]
-test_wind_normal = concat_wind[train_data_len:train_data_len + test_data_len]
-"""
+scaler_gauss = StandardScaler()
+scaler_wind = StandardScaler()
 
-concat_gauss = normalization(true_gauss[0:val_data_len])
-concat_wind = normalization(true_wind[0:val_data_len])
-true_gauss_normal = concat_gauss[0:train_data_len]
-true_wind_normal = concat_wind[0:train_data_len]
-val_gauss_normal = concat_gauss[train_data_len:train_data_len + val_data_len]
-val_wind_normal = concat_wind[train_data_len:train_data_len + val_data_len]
-traindataset = DummyDataset(true_gauss_normal,true_wind_normal,one_hot_labels[0:train_data_len])
-valdataset = DummyDataset(val_gauss_normal,val_wind_normal,one_hot_labels[train_data_len:val_data_len])
+scaler_gauss.fit(true_gauss[0:train_data_len])
+scaled_gauss = scaler_gauss.transform(true_gauss)
 
-epochs = 100
+scaler_wind.fit(true_wind[0:train_data_len])
+scaled_wind = scaler_wind.transform(true_wind)
+
+traindataset = DummyDataset(scaled_gauss[0:train_data_len],scaled_wind[0:train_data_len],one_hot_labels[0:train_data_len])
+valdataset = DummyDataset(scaled_gauss[train_data_len:val_data_len],scaled_wind[train_data_len:val_data_len],one_hot_labels[train_data_len:val_data_len])
+
+epochs = 10
 batch_size = 1000
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
@@ -511,11 +491,13 @@ model.to(device)
 lossfn = ContrastiveLoss().to(device)
 criterion = nn.CrossEntropyLoss().to(device1)
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001,weight_decay=0.0001)
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1, verbose=True)
+cont_optimizer = torch.optim.Adam(model.parameters(), lr=0.001,weight_decay=0.0001)
+cross_en_optimizer = torch.optim.Adam(model.parameters(), lr=0.001,weight_decay=0.0001)
+cont_scheduler = torch.optim.lr_scheduler.StepLR(cont_optimizer, step_size=10, gamma=0.1, verbose=True)
+cross_en_scheduler = torch.optim.lr_scheduler.StepLR(cross_en_optimizer, step_size=10, gamma=0.1, verbose=True)
 
 # Create an instance of the CNN model
-identify_model = MLP(num_classes=2)
+identify_model = CNN(num_classes=2)
 identify_model.to(device1)
 
 model.train()
@@ -534,85 +516,87 @@ for epoch in range(1, epochs+1):
     train_class_accuracies = []
     val_class_accuracies = []
     
-    train_steps_losses = []
-    train_class_losses = []
-    val_steps_losses = []
-    steps_accu = []
+    train_cont_losses = []
+    train_cross_en_losses = []
+    val_cont_losses = []
+    val_cross_en_losses = []
     train_steps_accu = []
     val_steps_accu = []
 
     dist_model_checkpoints = checkpoints_dir + "dist_model_" + str(epoch) + ".pt"
     class_model_checkpoints = checkpoints_dir + "class_model_" + str(epoch) + ".pt"
-    for steps, (true_gauss_tensor, true_wind_tensor, labels) in tqdm(enumerate(train_dataloader),total=len(train_dataloader)):        
+    for steps, (train_gauss_tensor, train_wind_tensor, train_labels) in tqdm(enumerate(train_dataloader),total=len(train_dataloader)):        
 
-        optimizer.zero_grad() 
-        genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
+        cont_optimizer.zero_grad() 
+        train_genuine_output = model(train_gauss_tensor.to(device), train_wind_tensor.to(device))
         #calculate contrastive loss
-        train_cont_loss = lossfn(genuine_output[0], labels.to(device),device)
+        train_cont_loss = lossfn(train_genuine_output[0], train_labels.to(device),device)
+        train_cont_losses.append(train_cont_loss.cpu().detach().numpy())
         
+        train_cont_loss.backward(retain_graph=True)
+        cont_optimizer.step()
+
+        cross_en_optimizer.zero_grad()
         # Forward pass
-        train_embedding_vector_copy = torch.from_numpy(genuine_output[1].detach().cpu().numpy())
-        outputs = identify_model(genuine_output[1].to(device1))
+        train_genuine_output_numpy = train_genuine_output[1].detach().cpu().numpy()
+        train_outputs = identify_model(torch.from_numpy(train_genuine_output_numpy).to(device1))
         #calculate cross entropy loss
-        _, y_targets = labels.clone().max(dim=1)
-        train_cross_en_loss = criterion(outputs.requires_grad_(True), y_targets.long().to(device1))
-        
+        _, train_y_targets = train_labels.clone().max(dim=1)
+        train_cross_en_loss = criterion(train_outputs.requires_grad_(True), train_y_targets.long().to(device1))
+        train_cross_en_losses.append(train_cross_en_loss.cpu().detach().numpy())
         #calculate accuracy
-        outputs_softmax = torch.softmax(outputs,dim=1)
-        predicted_classes = torch.argmax(outputs_softmax, dim=1)
+        train_outputs_softmax = torch.softmax(train_outputs,dim=1)
+        train_predicted_classes = torch.argmax(train_outputs_softmax, dim=1)
         # one-hot表現に変換
-        predicted_labels = torch.zeros(outputs.size(0), 2)
-        predicted_labels.scatter_(1, predicted_classes.cpu().unsqueeze(1), 1)
-        correct = (predicted_labels.to(device1) == labels.to(device1)).sum().item()
-        total = labels.numel()
-        accuracy = correct / total
-        train_class_accuracies.append(accuracy)
+        train_predicted_labels = torch.zeros(train_outputs.size(0), 2)
+        train_predicted_labels.scatter_(1, train_predicted_classes.cpu().unsqueeze(1), 1)
+        train_correct = (train_predicted_labels.to(device1) == train_labels.to(device1)).sum().item()
+        train_total = train_labels.numel()
+        train_accuracy = train_correct / train_total
+        train_class_accuracies.append(train_accuracy)
         
-        # Backward pass and optimization
-        train_loss = train_cont_loss + 0.01*train_cross_en_loss
-        train_steps_losses.append(train_loss.cpu().detach().numpy())
-        train_loss.backward()
-        optimizer.step()
+        train_cross_en_loss.backward()
+        cross_en_optimizer.step()
 
     now_time = dt.datetime.now()
-    print(f"EPOCH {epoch}| Train: loss {np.mean(train_steps_losses)} | class loss  {np.mean(train_class_losses)}| train accuracy {np.mean(train_class_accuracies)} ")
-    file1.write("%s , %s, %s, %s, %s, %s\n" % (str(epoch), "train_loss", str(np.mean(train_steps_losses)), "train_accuracy", str(np.mean(train_class_accuracies)), now_time))
+    print(f"EPOCH {epoch}| Train: loss {np.mean(train_cont_losses)} | class loss  {np.mean(train_cross_en_losses)}| train accuracy {np.mean(train_class_accuracies)} ")
+    file1.write("%s, %s, %s, %s, %s, %s, %s, %s\n" % (str(epoch), "train_cont_loss", str(np.mean(train_cont_losses)), "train_cross_en_loss", str(np.mean(train_cross_en_losses)), "train_accuracy", str(np.mean(train_class_accuracies)), now_time))
     torch.save(model.state_dict(),dist_model_checkpoints)
     torch.save(identify_model.state_dict(),class_model_checkpoints)
 
-    scheduler.step()
+    cont_scheduler.step()
+    cross_en_scheduler.step()
     model.eval()
     identify_model.eval()
     with torch.no_grad():
-        for steps, (true_gauss_tensor, true_wind_tensor, labels) in tqdm(enumerate(val_dataloader),total=len(val_dataloader)):
+        for steps, (val_gauss_tensor, val_wind_tensor, val_labels) in tqdm(enumerate(val_dataloader),total=len(val_dataloader)):
+            
+            val_genuine_output = model(val_gauss_tensor.to(device), val_wind_tensor.to(device))
+            val_cont_loss = lossfn(val_genuine_output[0], val_labels.to(device),device)
+            val_cont_losses.append(val_cont_loss.cpu().detach().numpy())
 
-            genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
-
-            #calculate contrastive loss
-            val_cont_loss = lossfn(genuine_output[0], labels.to(device),device)
             # Forward pass
-            val_embedding_vector_copy = torch.from_numpy(genuine_output[1].detach().cpu().numpy())
-            val_outputs = identify_model(genuine_output[1].to(device1))
+
+            val_genuine_output_numpy = val_genuine_output[1].detach().cpu().numpy()
+            val_outputs = identify_model(torch.from_numpy(val_genuine_output_numpy).to(device1))
             #calculate loss
-            _, y_val_targets = labels.clone().max(dim=1)
+            _, y_val_targets = val_labels.clone().max(dim=1)
             val_cross_en_loss = criterion(val_outputs, y_val_targets.long().to(device1))
+            val_cross_en_losses.append(val_cross_en_loss.cpu().detach().numpy())
             #calculate accuracy
             val_outputs_softmax = torch.softmax(val_outputs,dim=1)
             val_predicted_classes = torch.argmax(val_outputs_softmax, dim=1)
             # one-hot表現に変換
             val_predicted_labels = torch.zeros(val_outputs.size(0), 2)
             val_predicted_labels.scatter_(1, val_predicted_classes.cpu().unsqueeze(1), 1)
-            val_correct = (val_predicted_labels.to(device1) == labels.to(device1)).sum().item()
-            val_total = labels.numel()
+            val_correct = (val_predicted_labels.to(device1) == val_labels.to(device1)).sum().item()
+            val_total = val_labels.numel()
             val_accuracy = val_correct / val_total
             val_class_accuracies.append(val_accuracy)
-            # Backward pass and optimization
-            val_loss = val_cont_loss + 0.01*val_cross_en_loss
-            val_steps_losses.append(val_loss.cpu().detach().numpy())
 
 
-        print(f"EPOCH {epoch}| Val: dist loss {np.mean(val_steps_losses)}| val accuracy {np.mean(val_class_accuracies)} ")
-        file2.write("%s , %s, %s, %s, %s, %s\n" % (str(epoch), "val_loss", str(np.mean(val_steps_losses)), "val_accuracy", str(np.mean(val_class_accuracies)), now_time))
+        print(f"EPOCH {epoch}| Val: dist loss {np.mean(val_cont_losses)}| class loss  {np.mean(val_cross_en_losses)} | val accuracy {np.mean(val_class_accuracies)} ")
+        file2.write("%s, %s, %s, %s, %s, %s, %s, %s\n" % (str(epoch), "val_cont_loss", str(np.mean(val_cont_losses)) ,"val_cross_en_loss", str(np.mean(val_cross_en_losses)), "val_accuracy", str(np.mean(val_class_accuracies)), now_time))
 file1.close()
 file2.close()
 
@@ -665,12 +649,9 @@ np.save(datadir + 'test_gauss_b_set', gauss_b_set)
 np.save(datadir + 'test_labels', labels)
 """
 
-"""
 #テストデータ
 test_true_gauss = np.load(datadir + 'test_gauss_a_set.npy')
 test_true_wind = np.load(datadir + 'test_wind_a_set.npy')
-test_wrong_gauss = np.load(datadir + 'test_gauss_b_set.npy')
-test_wrong_wind = np.load(datadir + 'test_wind_b_set.npy')
 test_label = np.load(datadir + 'test_labels.npy')
 
 test_data_len = 50000
@@ -682,12 +663,11 @@ for step, genuine_label in enumerate(test_label[:test_data_len][:,0]):
     if genuine_label == 0:
         one_hot_testlabels[step]=torch.tensor([0,1],dtype=torch.float)
 
-true_gauss_normal = normalization(test_true_gauss)
-true_wind_normal = normalization(test_true_wind)
-wrong_gauss_normal = normalization(test_wrong_gauss)
-wrong_wind_normal = normalization(test_wrong_wind)
 
-testdataset = DummyDataset(true_gauss_normal[test_data_len:100000],true_wind_normal[test_data_len:100000],one_hot_testlabels[test_data_len:100000])
+test_scaled_gauss = scaler_gauss.transform(test_true_gauss)
+test_scaled_wind = scaler_wind.transform(test_true_wind)
+
+testdataset = DummyDataset(test_true_gauss[0:test_data_len] ,test_true_wind[0:test_data_len] ,one_hot_testlabels[0:test_data_len])
 batch_size = 1000
 test_dataloader = DataLoader(testdataset, batch_size = batch_size, shuffle=True)
 
@@ -703,25 +683,23 @@ identify_model.eval()
 test_class_accuracies = []
 predictions_array = []
 with torch.no_grad():
-    for steps, (true_gauss_tensor, true_wind_tensor, labels) in tqdm(enumerate(test_dataloader),total=len(test_dataloader)):
-        genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
+    for steps, (test_gauss_tensor, test_wind_tensor, test_labels) in tqdm(enumerate(test_dataloader),total=len(test_dataloader)):
+        genuine_output = model(test_gauss_tensor.to(device), test_wind_tensor.to(device))
 
         # Forward pass
-        val_embedding_vector_copy = torch.from_numpy(genuine_output[1].detach().cpu().numpy())
-        val_outputs = identify_model(val_embedding_vector_copy.to(device1))
+        test_outputs = identify_model(genuine_output[1].to(device1))
         #calculate loss
-        _, y_val_targets = labels.clone().max(dim=1)
-        val_loss = criterion(val_outputs, y_val_targets.long().to(device1))
+        _, y_test_targets = test_labels.clone().max(dim=1)
+        test_loss = criterion(test_outputs, y_test_targets.long().to(device1))
         #calculate accuracy
-        val_outputs_softmax = torch.softmax(val_outputs,dim=1)
-        val_predicted_classes = torch.argmax(val_outputs_softmax, dim=1)
+        test_outputs_softmax = torch.softmax(test_outputs,dim=1)
+        test_predicted_classes = torch.argmax(test_outputs_softmax, dim=1)
         # one-hot表現に変換
-        val_predicted_labels = torch.zeros(val_outputs.size(0), 2)
-        val_predicted_labels.scatter_(1, val_predicted_classes.cpu().unsqueeze(1), 1)
-        val_correct = (val_predicted_labels.to(device1) == labels.to(device1)).sum().item()
-        val_total = labels.numel()
-        val_accuracy = val_correct / val_total
-        test_class_accuracies.append(val_accuracy)
+        test_predicted_labels = torch.zeros(test_outputs.size(0), 2)
+        test_predicted_labels.scatter_(1, test_predicted_classes.cpu().unsqueeze(1), 1)
+        test_correct = (val_predicted_labels.to(device1) == test_labels.to(device1)).sum().item()
+        test_total = test_labels.numel()
+        test_accuracy = test_correct / test_total
+        test_class_accuracies.append(test_accuracy)
     
 print(f"steps Accuracy: {np.mean(test_class_accuracies)}")
-"""

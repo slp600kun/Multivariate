@@ -384,11 +384,18 @@ for step, genuine_label in enumerate(label[:val_data_len][:,0]):
     if genuine_label == 0:
         one_hot_labels[step]=torch.tensor([0,1],dtype=torch.float)
 
-true_gauss_normal = normalization(true_gauss[0:val_data_len])
-true_wind_normal = normalization(true_wind[0:val_data_len])
 
-traindataset = DummyDataset(true_gauss_normal[0:train_data_len],true_wind_normal[0:train_data_len],one_hot_labels[0:train_data_len])
-valdataset = DummyDataset(true_gauss_normal[train_data_len:val_data_len],true_wind_normal[train_data_len:val_data_len],one_hot_labels[train_data_len:val_data_len])
+scaler_gauss = StandardScaler()
+scaler_wind = StandardScaler()
+
+scaler_gauss.fit(true_gauss[0:train_data_len])
+scaled_gauss = scaler_gauss.transform(true_gauss)
+
+scaler_wind.fit(true_wind[0:train_data_len])
+scaled_wind = scaler_wind.transform(true_wind)
+
+traindataset = DummyDataset(scaled_gauss[0:train_data_len],scaled_wind[0:train_data_len],one_hot_labels[0:train_data_len])
+valdataset = DummyDataset(scaled_gauss[train_data_len:val_data_len],scaled_wind[train_data_len:val_data_len],one_hot_labels[train_data_len:val_data_len])
 
 epochs = 10
 batch_size = 100

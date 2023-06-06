@@ -1,9 +1,10 @@
-1 , train_loss, 0.15468939, train_accuracy, 0.9011333333333332, 2023-06-01 14:39:03.587814
-2 , train_loss, 0.048093613, train_accuracy, 0.9638999999999999, 2023-06-01 14:39:14.299706
-3 , train_loss, 0.034925535, train_accuracy, 0.9744000000000002, 2023-06-01 14:39:24.684738
-4 , train_loss, 0.026790097, train_accuracy, 0.985, 2023-06-01 14:39:35.038320
-5 , train_loss, 0.032780904, train_accuracy, 0.9825333333333333, 2023-06-01 14:39:45.227854
-6 , train_loss, 0.014801347, train_accuracy, 0.9942999999999999, 2023-06-01 14:39:55.773667
-7 , train_loss, 0.00955592, train_accuracy, 0.9975999999999999, 2023-06-01 14:40:06.074794
-8 , train_loss, 0.009160042, train_accuracy, 0.9973, 2023-06-01 14:40:16.540530
-9 , train_loss, 0.007614038, train_accuracy, 0.9981666666666666, 2023-06-01 14:40:27.226578
+1, train_cont_loss, 0.24808665, train_cross_en_loss, 0.7135497, train_accuracy, 0.5103333333333333, 2023-06-06 19:02:24.252385
+2, train_cont_loss, 0.08684799, train_cross_en_loss, 0.7070417, train_accuracy, 0.5150333333333333, 2023-06-06 19:02:30.480761
+3, train_cont_loss, 0.07531537, train_cross_en_loss, 0.69606346, train_accuracy, 0.5138666666666666, 2023-06-06 19:02:36.521990
+4, train_cont_loss, 0.07375503, train_cross_en_loss, 0.68583673, train_accuracy, 0.5188333333333334, 2023-06-06 19:02:42.505397
+5, train_cont_loss, 0.07104203, train_cross_en_loss, 0.6854833, train_accuracy, 0.5219, 2023-06-06 19:02:48.534547
+6, train_cont_loss, 0.07318466, train_cross_en_loss, 0.698553, train_accuracy, 0.5191, 2023-06-06 19:02:54.594417
+7, train_cont_loss, 0.07151776, train_cross_en_loss, 0.7028173, train_accuracy, 0.5199666666666667, 2023-06-06 19:03:00.676569
+8, train_cont_loss, 0.07299829, train_cross_en_loss, 0.7098595, train_accuracy, 0.5200333333333335, 2023-06-06 19:03:06.684927
+9, train_cont_loss, 0.071654595, train_cross_en_loss, 0.7110802, train_accuracy, 0.5210666666666667, 2023-06-06 19:03:12.679623
+10, train_cont_loss, 0.07141897, train_cross_en_loss, 0.71378934, train_accuracy, 0.5218, 2023-06-06 19:03:18.681041
