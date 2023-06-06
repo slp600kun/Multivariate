@@ -9,11 +9,9 @@ import torch.nn.functional as F
 import torch.optim
 from torch.utils.data import Dataset, DataLoader,TensorDataset
 import matplotlib.pyplot as plt
-from sklearn import svm
-from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler,MinMaxScaler
 from tqdm.auto import tqdm
 import datetime as dt
 import random
@@ -375,8 +373,8 @@ print(f'{n_max_gpus} GPUs available')
 n_gpus = min(2, n_max_gpus)
 print(f'Using {n_gpus} GPUs')
 
-train_data_len = 1000000
-val_data_len = 1200000
+train_data_len = 30000
+val_data_len = 35000
 
 #識別学習に用いるone-hot表現のラベルを作成
 one_hot_labels = torch.zeros(val_data_len, 2, dtype=torch.float)
@@ -386,13 +384,19 @@ for step, genuine_label in enumerate(label[:val_data_len][:,0]):
     if genuine_label == 0:
         one_hot_labels[step]=torch.tensor([0,1],dtype=torch.float)
 
-true_gauss_normal = normalization(true_gauss[0:val_data_len])
-true_wind_normal = normalization(true_wind[0:val_data_len])
+scaler_gauss = StandardScaler()
+scaler_wind = StandardScaler()
 
-traindataset = DummyDataset(true_gauss_normal[0:train_data_len],true_wind_normal[0:train_data_len],one_hot_labels[0:train_data_len])
-valdataset = DummyDataset(true_gauss_normal[train_data_len:val_data_len],true_wind_normal[train_data_len:val_data_len],one_hot_labels[train_data_len:val_data_len])
+scaler_gauss.fit(true_gauss[0:train_data_len])
+scaled_gauss = scaler_gauss.transform(true_gauss)
 
-epochs = 1
+scaler_wind.fit(true_wind[0:train_data_len])
+scaled_wind = scaler_wind.transform(true_wind)
+
+traindataset = DummyDataset(scaled_gauss[0:train_data_len],scaled_wind[0:train_data_len],one_hot_labels[0:train_data_len])
+valdataset = DummyDataset(scaled_gauss[train_data_len:val_data_len],scaled_wind[train_data_len:val_data_len],one_hot_labels[train_data_len:val_data_len])
+
+epochs = 10
 batch_size = 1000
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
@@ -486,13 +490,11 @@ for step, genuine_label in enumerate(test_label[:test_data_len][:,0]):
     if genuine_label == 0:
         one_hot_testlabels[step]=torch.tensor([0,1],dtype=torch.float)
 
-true_gauss_normal = normalization(test_true_gauss)
-true_wind_normal = normalization(test_true_wind)
-wrong_gauss_normal = normalization(test_wrong_gauss)
-wrong_wind_normal = normalization(test_wrong_wind)
+test_scaled_gauss = scaler_gauss.transform(test_true_gauss)
+test_scaled_wind = scaler_wind.transform(test_true_wind)
 
-testdataset = DummyDataset(true_gauss_normal[0:test_data_len],true_wind_normal[0:test_data_len],one_hot_testlabels[0:test_data_len])
-batch_size = 100
+testdataset = DummyDataset(test_true_gauss[0:test_data_len] ,test_true_wind[0:test_data_len] ,one_hot_testlabels[0:test_data_len])
+batch_size = 1000
 test_dataloader = DataLoader(testdataset, batch_size = batch_size, shuffle=True)
 
 model_path = 'data/checkpoints/model_10.pt'
@@ -502,7 +504,7 @@ model.eval()
 test_class_accuracies = []
 predictions_array = []
 with torch.no_grad():
-    for steps, (true_gauss_tensor, true_wind_tensor, labels) in tqdm(enumerate(test_dataloader),total=len(test_dataloader)):
+    for steps, (true_gauss_tensor, true_wind_tensor, test_labels) in tqdm(enumerate(test_dataloader),total=len(test_dataloader)):
         genuine_output = model(true_gauss_tensor.to(device), true_wind_tensor.to(device))
 
         #calculate accuracy
@@ -511,9 +513,9 @@ with torch.no_grad():
         # one-hot表現に変換
         predicted_labels = torch.zeros(genuine_output.size(0), 2)
         predicted_labels.scatter_(1, predicted_classes.cpu().unsqueeze(1), 1)
-        correct = (predicted_labels.to(device) == labels.to(device)).sum().item()
-        total = labels.numel()
-        accuracy = correct / total
+        test_correct = (predicted_labels.to(device) == test_labels.to(device)).sum().item()
+        test_total = test_labels.numel()
+        test_accuracy = test_correct / test_total
         test_class_accuracies.append(accuracy)
 
     
