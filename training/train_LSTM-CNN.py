@@ -13,7 +13,7 @@ from sklearn import svm
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from tqdm.auto import tqdm
 import datetime as dt
 import random
@@ -61,39 +61,36 @@ class LSTM_embedding(nn.Module):
         output = self.bn_block_3(output)
 
         return output
-    
 
 class CombinedEncoderLSTM(nn.Module):
     def __init__(self):
-        super().__init__()
-        # Define parameters
+        super(CombinedEncoderLSTM, self).__init__()
         self.gauss_enc = LSTM_embedding()
         self.wind_enc = LSTM_embedding()
-        self.dense_1 = nn.Linear(128, 64)
-        self.dense_2 = nn.Linear(64,2)
-        self.dense_3 = nn.Linear(64, 32)
-        self.bn_block_1 = nn.BatchNorm1d(64)
-        self.relu = nn.ReLU(False)
-        self.dropout_1 = nn.Dropout(0.2)
-
-
     def forward(self, gauss_input, wind_input):
         gauss_output = self.gauss_enc(gauss_input)
-        wind_output = self.gauss_enc(wind_input)
+        wind_output = self.wind_enc(wind_input)
         output = torch.cat((gauss_output,wind_output),dim=1)
-        
-        output = self.dense_1(output)
-        output = self.relu(output)
-        output = self.dropout_1(output)
-        output = self.bn_block_1(output)
+        return output
 
-        #距離学習に対する出力
-        output_two_dim = self.dense_2(output)
-        #識別学習に対する出力
-        output_vector = self.dense_3(output)
 
-    
-        return output_two_dim , output_vector   
+class FullyConnected(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Define parameters
+        self.FC = nn.Sequential(
+            nn.Linear(128, 64),
+            nn.BatchNorm1d(64),
+            nn.ReLU(False),
+            nn.Dropout(0.2),
+            nn.Linear(64,2),
+        )
+
+    def forward(self, gauss_input, wind_input):
+        output = CombinedEncoderLSTM(gauss_output,wind_output)
+        output = self.FC(output)
+        return output
+
 
 class CNN(nn.Module):
     def __init__(self,num_classes):
@@ -147,6 +144,7 @@ class CNN(nn.Module):
         out = self.relu(self.fc1(out))
         out = self.fc2(out)
         return out
+
 
 
 
@@ -455,8 +453,8 @@ print(f'{n_max_gpus} GPUs available')
 n_gpus = min(2, n_max_gpus)
 print(f'Using {n_gpus} GPUs')
 
-train_data_len = 3000
-val_data_len = 3500
+train_data_len = 30000
+val_data_len = 35000
 
 #識別学習に用いるone-hot表現のラベルを作成
 one_hot_labels = torch.zeros(val_data_len, 2, dtype=torch.float)
@@ -497,7 +495,10 @@ cont_scheduler = torch.optim.lr_scheduler.StepLR(cont_optimizer, step_size=10, g
 cross_en_scheduler = torch.optim.lr_scheduler.StepLR(cross_en_optimizer, step_size=10, gamma=0.1, verbose=True)
 
 # Create an instance of the CNN model
-identify_model = CNN(num_classes=2)
+identify_model = nn.Sequential(
+    CombinedEncoderLSTM(),
+    CNN(num_classes=2)
+)
 identify_model.to(device1)
 
 model.train()
@@ -548,13 +549,20 @@ for epoch in range(1, epochs+1):
         embedding_vectors = torch.cat(embedding_vector,dim=0)
         print(f"EPOCH {epoch}| Val: dist loss {np.mean(val_cont_losses)}")
 
-identify_train_dataset = TensorDataset(embedding_vectors[0:train_data_len],one_hot_labels[0:train_data_len])
-identify_val_dataset = TensorDataset(embedding_vectors[train_data_len:val_data_len],one_hot_labels[train_data_len:val_data_len])
+scaler_vector = MinMaxScaler()
+
+scaler_vector.fit(embedding_vectors[0:train_data_len].cpu())
+scaled_vectors = scaler_vector.transform(embedding_vectors.cpu())
+scaled_vectors = torch.tensor(scaled_vectors,dtype=torch.float)
+
+identify_train_dataset = TensorDataset(scaled_vectors[0:train_data_len],one_hot_labels[0:train_data_len])
+identify_val_dataset = TensorDataset(scaled_vectors[train_data_len:val_data_len],one_hot_labels[train_data_len:val_data_len])
 
 identify_train_dataloader = DataLoader(identify_train_dataset, batch_size=100, shuffle=True)
 identify_val_dataloader = DataLoader(identify_val_dataset, batch_size=100, shuffle=True)
 
-for epoch in range(1, epochs+1):
+class_epochs = 100
+for epoch in range(1, class_epochs+1):
     identify_model.train()
 
     train_cross_en_losses = []
@@ -707,9 +715,12 @@ with torch.no_grad():
         test_embedding_vector.append(train_genuine_output[1].detach())
         # Forward pass
     test_embedding_vectors = torch.cat(test_embedding_vector,dim=0)   
-    
-    identify_test_dataset = TensorDataset(test_embedding_vectors[0:train_data_len],one_hot_testlabels[0:train_data_len])
+    test_scaled_vectors = scaler_vector.transform(test_embedding_vectors.cpu())
+    test_scaled_vectors = torch.tensor(test_scaled_vectors,dtype=torch.float)
+
+    identify_test_dataset = TensorDataset(test_scaled_vectors[0:train_data_len],one_hot_testlabels[0:train_data_len])
     identify_test_dataloader = DataLoader(identify_train_dataset, batch_size=100, shuffle=True)
+    
 
     for steps, (test_embedding_vector, test_labels) in tqdm(enumerate(identify_test_dataloader),total=len(identify_test_dataloader)):
         test_outputs = identify_model(test_embedding_vector.to(device1))
