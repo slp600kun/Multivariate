@@ -40,10 +40,12 @@ class LSTM_embedding(nn.Module):
         # Define parameters
         self.LSTM_block_1 = nn.LSTM(input_size=1, hidden_size=128, num_layers=2,batch_first=True,dropout=0.2)
         self.LSTM_block_2 = nn.LSTM(input_size=128, hidden_size=256, num_layers=2,batch_first=True,dropout=0.2)
-        self.LSTM_block_3 = nn.LSTM(input_size=256, hidden_size=64, num_layers=2,batch_first=True,dropout=0.2)
+        self.LSTM_block_3 = nn.LSTM(input_size=256, hidden_size=128, num_layers=2,batch_first=True,dropout=0.2)
         self.bn_block_1 = nn.BatchNorm1d(128)
         self.bn_block_2 = nn.BatchNorm1d(256)
-        self.bn_block_3 = nn.BatchNorm1d(64)
+        
+        self.fc = nn.Linear(128,64)
+        self.max_pool = nn.MaxPool1d(kernel_size=2)
 
     def forward(self, input):
         input = torch.unsqueeze(input,dim=2)
@@ -58,9 +60,8 @@ class LSTM_embedding(nn.Module):
         output = output.permute(0, 2, 1)
 
         output = self.LSTM_block_3(output)[0][:,-1,:]
-        output = self.bn_block_3(output)
-
-        return output
+        out = self.fc(output)
+        return out
 
 class CombinedEncoderLSTM(nn.Module):
     def __init__(self):
@@ -84,7 +85,6 @@ class FullyConnected(nn.Module):
             nn.Linear(128, 64),
             nn.BatchNorm1d(64),
             nn.ReLU(False),
-            nn.Dropout(0.2),
             nn.Linear(64,2),
         )
 
@@ -98,30 +98,30 @@ class CNN(nn.Module):
     def __init__(self,num_classes):
         super(CNN, self).__init__()
         self.cnn = nn.Sequential(
-            nn.Conv1d(1, 8, kernel_size=1),
-            nn.ReLU(),
-            nn.BatchNorm1d(8),
-            nn.AdaptiveMaxPool1d(output_size=64),
-            nn.Dropout1d(0.2),
-            nn.Conv1d(8, 16, kernel_size=1),
+            nn.Conv1d(1, 16, kernel_size=1),
             nn.ReLU(),
             nn.BatchNorm1d(16),
-            nn.AdaptiveMaxPool1d(output_size=32),
-            nn.Dropout1d(0.2),
+            nn.AdaptiveMaxPool1d(output_size=64),
+            nn.Dropout1d(0.5),
             nn.Conv1d(16, 32, kernel_size=1),
             nn.ReLU(),
             nn.BatchNorm1d(32),
-            nn.AdaptiveMaxPool1d(output_size=16),
-            nn.Dropout1d(0.2),
-            nn.Conv1d(32, 32, kernel_size=1),
+            nn.AdaptiveMaxPool1d(output_size=32),
+            nn.Dropout1d(0.5),
+            nn.Conv1d(32, 64, kernel_size=1),
             nn.ReLU(),
-            nn.BatchNorm1d(32),
+            nn.BatchNorm1d(64),
+            nn.AdaptiveMaxPool1d(output_size=16),
+            nn.Dropout1d(0.5),
+            nn.Conv1d(64, 128, kernel_size=1),
+            nn.ReLU(),
+            nn.BatchNorm1d(128),
             nn.AdaptiveMaxPool1d(output_size=8),
-            nn.Dropout1d(0.2)
+            nn.Dropout1d(0.5)
         )
         self.encoder = CombinedEncoderLSTM()
         self.relu = nn.ReLU()
-        self.fc1 = nn.Linear(256,64)
+        self.fc1 = nn.Linear(1024,64)
         self.fc2 = nn.Linear(64, num_classes)
 
     def forward(self, gauss_input,wind_input):
@@ -333,7 +333,7 @@ def normalization(data):
 
 
 class ContrastiveLoss(nn.Module):
-    def __init__(self, margin=1):
+    def __init__(self, margin=1.2):
         super(ContrastiveLoss, self).__init__()
         self.margin = margin
 
@@ -362,7 +362,7 @@ class MLP(nn.Module):
         self.bn_block_1 = nn.BatchNorm1d(128)
         self.bn_block_2 = nn.BatchNorm1d(512)
         self.bn_block_3 = nn.BatchNorm1d(128)
-        self.dropout2 = nn.Dropout2d(0.2)
+        self.dropout2 = nn.Dropout2d(0.4)
         self.relu = nn.PReLU()
         #self.sigmoid = nn.Sigmoid()
 
@@ -378,7 +378,6 @@ class MLP(nn.Module):
         x = self.bn_block_3(x)
         x = self.fc4(x)
         return x
-
 """
 climo_walk_files = sorted([f for f in os.listdir('data/csv/climomaster') if 'walk' in f])
 gauss_walk_files = sorted([f for f in os.listdir('data/csv/ML-logger') if 'walk' in f])
@@ -425,7 +424,6 @@ np.save(datadir + 'gauss_b_set', gauss_b_set)
 np.save(datadir + 'labels', labels)
 """
 
-
 datadir = "data/train-npy/"
 checkpoints_dir = "data/checkpoints/"
 logs_dir = "data/logs/"
@@ -439,8 +437,8 @@ print(f'{n_max_gpus} GPUs available')
 n_gpus = min(2, n_max_gpus)
 print(f'Using {n_gpus} GPUs')
 
-train_data_len = 3000
-val_data_len = 3500
+train_data_len = 30000
+val_data_len = 35000
 
 #識別学習に用いるone-hot表現のラベルを作成
 one_hot_labels = torch.zeros(val_data_len, 2, dtype=torch.float)
@@ -462,19 +460,19 @@ scaled_wind = scaler_wind.transform(true_wind)
 traindataset = DummyDataset(scaled_gauss[0:train_data_len],scaled_wind[0:train_data_len],one_hot_labels[0:train_data_len])
 valdataset = DummyDataset(scaled_gauss[train_data_len:val_data_len],scaled_wind[train_data_len:val_data_len],one_hot_labels[train_data_len:val_data_len])
 
-epochs = 3
-class_epochs = 3
-batch_size = 100
+epochs = 5
+class_epochs = 30
+batch_size = 1000
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 model = FullyConnected()
 model.to(device)
 lossfn = ContrastiveLoss().to(device)
 
-cont_optimizer = torch.optim.Adam(model.parameters(), lr=0.001,weight_decay=0.0001)
-cont_scheduler = torch.optim.lr_scheduler.StepLR(cont_optimizer, step_size=10, gamma=0.1, verbose=True)
+cont_optimizer = torch.optim.Adam(model.parameters(), lr=0.00001,weight_decay=0.01)
+cont_scheduler = torch.optim.lr_scheduler.StepLR(cont_optimizer, step_size=5, gamma=0.1, verbose=True)
 
 model.train()
 
@@ -516,10 +514,10 @@ for epoch in range(1, epochs+1):
             val_cont_losses.append(val_cont_loss.cpu().detach().numpy())
         print(f"EPOCH {epoch}| Val: dist loss {np.mean(val_cont_losses)}")
 
+device1 = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 model_path = checkpoints_dir + "dist_model_" + str(epoch) + ".pt"
 model.load_state_dict(torch.load(model_path))
 
-device1 = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Create an instance of the CNN model
 identify_model = CNN(num_classes=2)
 identify_model.encoder = model.embedding
@@ -528,14 +526,12 @@ identify_model.to(device1)
 for param in identify_model.encoder.parameters():
     param.requires_grad = False
 
-
 criterion = nn.CrossEntropyLoss().to(device1)
-cross_en_optimizer = torch.optim.Adam(identify_model.parameters(), lr=0.001,weight_decay=0.0001)
-cross_en_scheduler = torch.optim.lr_scheduler.StepLR(cross_en_optimizer, step_size=20, gamma=0.1, verbose=True)
+cross_en_optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, identify_model.parameters()), lr=0.0001,weight_decay=0.01)
+cross_en_scheduler = torch.optim.lr_scheduler.StepLR(cross_en_optimizer, step_size=10, gamma=0.1, verbose=True)
 
 for epoch in range(1, class_epochs+1):
     identify_model.train()
-
     train_cross_en_losses = []
     val_cross_en_losses = []
     train_class_accuracies = []
@@ -568,7 +564,6 @@ for epoch in range(1, class_epochs+1):
     print(f"EPOCH {epoch}| Train: class loss  {np.mean(train_cross_en_losses)}| train accuracy {np.mean(train_class_accuracies)} ")
     file1.write("%s, %s, %s, %s, %s, %s\n" % (str(epoch), "train_cross_en_loss", str(np.mean(train_cross_en_losses)), "train_accuracy", str(np.mean(train_class_accuracies)), now_time))
     torch.save(identify_model.state_dict(),class_model_checkpoints)
-
     cross_en_scheduler.step()
     identify_model.eval()
     with torch.no_grad():
@@ -577,7 +572,7 @@ for epoch in range(1, class_epochs+1):
             val_outputs = identify_model(val_gauss_tensor.to(device1), val_wind_tensor.to(device1))
             #calculate loss
             _, y_val_targets = val_labels.clone().max(dim=1)
-            val_cross_en_loss = criterion(val_outputs, y_val_targets.long().to(device1))
+            val_cross_en_loss = criterion(val_outputs.requires_grad_(True), y_val_targets.long().to(device1))
             val_cross_en_losses.append(val_cross_en_loss.cpu().detach().numpy())
             #calculate accuracy
             val_outputs_softmax = torch.softmax(val_outputs,dim=1)
@@ -690,13 +685,13 @@ with torch.no_grad():
         test_outputs_softmax = torch.softmax(test_outputs,dim=1)
         test_predicted_classes = torch.argmax(test_outputs_softmax, dim=1)
         # one-hot表現に変換
-        test_accuracy = accuracy_score(test_predicted_classes, test_true_classes)
+        test_accuracy = accuracy_score(test_predicted_classes.cpu(), test_true_classes.cpu())
         test_accuracies.append(test_accuracy)
-        test_precision = precision_score(test_predicted_classes, test_true_classes, average='macro')
+        test_precision = precision_score(test_predicted_classes.cpu(), test_true_classes.cpu(), average='macro')
         test_precisions.append(test_precision)
-        test_recall = recall_score(test_predicted_classes, test_true_classes, average='macro',zero_division=0)
+        test_recall = recall_score(test_predicted_classes.cpu(), test_true_classes.cpu(), average='macro',zero_division=0)
         test_recalls.append(test_recall)        
-        test_f1_score = f1_score(test_predicted_classes, test_true_classes, average='macro')
+        test_f1_score = f1_score(test_predicted_classes.cpu(), test_true_classes.cpu(), average='macro')
         test_f1_scores.append(test_f1_score)
 
 acc = np.mean(test_accuracies)
