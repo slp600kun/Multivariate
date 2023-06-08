@@ -1,6 +1,7 @@
 import sys
 import os
 import re
+from sklearn.manifold import TSNE
 import numpy as np
 from preprocess_data import preprocess_for_Siamese_Net
 import torch; torch.utils.backcompat.broadcast_warning.enabled = True
@@ -378,6 +379,39 @@ class MLP(nn.Module):
         x = self.bn_block_3(x)
         x = self.fc4(x)
         return x
+
+# 入力データをt-SNEで可視化
+def visualize_tsne(data, labels, title, output_file=None):
+    tsne = TSNE(n_components=2, random_state=42)
+    tsne_data = tsne.fit_transform(data)
+
+    plt.figure(figsize=(10, 8))
+    plt.scatter(tsne_data[:, 0], tsne_data[:, 1], c=labels, cmap='viridis')
+    plt.title(title)
+    plt.colorbar()
+    if output_file:
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        plt.savefig(output_file)
+        plt.close()
+    else:
+        plt.show()
+
+# モデルの推論結果と入力データを可視化
+def visualize_embedding(true_gauss_tensor, true_wind_tensor, genuine_output, labels, output_file1, output_file2):
+    # 入力データをnumpy配列に変換
+    gauss_data = true_gauss_tensor.detach().cpu().numpy()
+    wind_data = true_wind_tensor.detach().cpu().numpy()
+
+    # 入力データとgenuine_outputを結合
+    input_data = np.concatenate((gauss_data, wind_data), axis=1)
+    genuine_output_data = genuine_output.detach().cpu().numpy()
+
+    # 入力データのt-SNE可視化
+    visualize_tsne(input_data, labels, 'Input Data', output_file1)
+
+    # genuine_outputのt-SNE可視化
+    visualize_tsne(genuine_output_data, labels, 'genuine_output' , output_file2)
+
 """
 climo_walk_files = sorted([f for f in os.listdir('data/csv/climomaster') if 'walk' in f])
 gauss_walk_files = sorted([f for f in os.listdir('data/csv/ML-logger') if 'walk' in f])
@@ -495,6 +529,12 @@ for epoch in range(1, epochs+1):
 
         cont_optimizer.zero_grad() 
         train_genuine_output = model(train_gauss_tensor.to(device), train_wind_tensor.to(device))
+        _, y_targets = train_labels.clone().max(dim=1)
+        output_path1 = "plot/data-tSNE.png"
+        output_path2 = "plot/vector-tSNE.png"
+        if epoch==5:
+            visualize_embedding(train_gauss_tensor, train_wind_tensor, train_genuine_output, y_targets, output_path1 ,output_path2)
+            sys.exit()
         #calculate contrastive loss
         train_cont_loss = lossfn(train_genuine_output, train_labels.to(device),device)
         train_cont_losses.append(train_cont_loss.cpu().detach().numpy())        

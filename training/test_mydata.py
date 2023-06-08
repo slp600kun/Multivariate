@@ -36,13 +36,14 @@ class DummyDataset(Dataset):
         true_wind_tensor = torch.tensor(self.true_wind[idx],dtype=torch.float) # this is complete dataset
         labels = self.labels[idx].to(torch.float)
         return true_gauss_tensor,true_wind_tensor,labels
-class LSTM_embedding(nn.Module):
+
+class WindEncoderLSTM(nn.Module):
     def __init__(self):
         super().__init__()
         # Define parameters
-        self.LSTM_block_1 = nn.LSTM(input_size=1, hidden_size=128, num_layers=2,batch_first=True,dropout=0.5)
-        self.LSTM_block_2 = nn.LSTM(input_size=128, hidden_size=256, num_layers=2,batch_first=True,dropout=0.5)
-        self.LSTM_block_3 = nn.LSTM(input_size=256, hidden_size=64, num_layers=2,batch_first=True,dropout=0.5)
+        self.LSTM_block_1 = nn.LSTM(input_size=1, hidden_size=128, num_layers=2,batch_first=True,dropout=0.2)
+        self.LSTM_block_2 = nn.LSTM(input_size=128, hidden_size=256, num_layers=2,batch_first=True,dropout=0.2)
+        self.LSTM_block_3 = nn.LSTM(input_size=256, hidden_size=64, num_layers=2,batch_first=True,dropout=0.2)
         self.bn_block_1 = nn.BatchNorm1d(128)
         self.bn_block_2 = nn.BatchNorm1d(256)
         self.bn_block_3 = nn.BatchNorm1d(64)
@@ -59,13 +60,11 @@ class LSTM_embedding(nn.Module):
         output = self.bn_block_2(output)
         output = output.permute(0, 2, 1)
 
-        output,_ = self.LSTM_block_3(output)
-        output = output.permute(0, 2, 1)
+        output = self.LSTM_block_3(output)[0][:,-1,:]
         output = self.bn_block_3(output)
-        output = output.permute(0, 2, 1)
-        
+
         return output
-    
+
 
 class CombinedEncoderLSTM(nn.Module):
     def __init__(self):
@@ -115,7 +114,7 @@ test_true_gauss = np.load(datadir + 'test_gauss_a_set.npy')
 test_true_wind = np.load(datadir + 'test_wind_a_set.npy')
 test_label = np.load(datadir + 'test_labels.npy')
 
-test_data_len = 500000
+test_data_len = 50000
 #識別学習に用いるone-hot表現のラベルを作成
 one_hot_testlabels = torch.zeros(test_data_len, 2, dtype=torch.float)
 for step, genuine_label in enumerate(test_label[:test_data_len][:,0]):
@@ -131,9 +130,10 @@ testdataset = DummyDataset(test_scaled_gauss[0:test_data_len] ,test_scaled_wind[
 batch_size = 1000
 test_dataloader = DataLoader(testdataset, batch_size = batch_size, shuffle=True)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 model = CombinedEncoderLSTM()
-model_path = 'data/checkpoints/model_5.pt'
+model.to(device)
+model_path = 'data/checkpoints/model_1.pt'
 checkpoint = torch.load(model_path)
 model.load_state_dict(checkpoint)
 model.eval()

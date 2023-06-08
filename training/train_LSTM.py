@@ -372,8 +372,8 @@ print(f'{n_max_gpus} GPUs available')
 n_gpus = min(2, n_max_gpus)
 print(f'Using {n_gpus} GPUs')
 
-train_data_len = 30000
-val_data_len = 35000
+train_data_len = 3000000
+val_data_len = 3500000
 
 #識別学習に用いるone-hot表現のラベルを作成
 one_hot_labels = torch.zeros(val_data_len, 2, dtype=torch.float)
@@ -478,7 +478,7 @@ test_true_gauss = np.load(datadir + 'test_gauss_a_set.npy')
 test_true_wind = np.load(datadir + 'test_wind_a_set.npy')
 test_label = np.load(datadir + 'test_labels.npy')
 
-test_data_len = 50000
+test_data_len = 500000
 #識別学習に用いるone-hot表現のラベルを作成
 one_hot_testlabels = torch.zeros(test_data_len, 2, dtype=torch.float)
 for step, genuine_label in enumerate(test_label[:test_data_len][:,0]):
