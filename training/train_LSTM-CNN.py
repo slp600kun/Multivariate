@@ -494,7 +494,7 @@ scaled_wind = scaler_wind.transform(true_wind)
 traindataset = DummyDataset(scaled_gauss[0:train_data_len],scaled_wind[0:train_data_len],one_hot_labels[0:train_data_len])
 valdataset = DummyDataset(scaled_gauss[train_data_len:val_data_len],scaled_wind[train_data_len:val_data_len],one_hot_labels[train_data_len:val_data_len])
 
-epochs = 5
+epochs = 10
 class_epochs = 30
 batch_size = 1000
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
@@ -532,7 +532,7 @@ for epoch in range(1, epochs+1):
         _, y_targets = train_labels.clone().max(dim=1)
         output_path1 = "plot/data-tSNE.png"
         output_path2 = "plot/vector-tSNE.png"
-        if epoch==5:
+        if epoch==10:
             visualize_embedding(train_gauss_tensor, train_wind_tensor, train_genuine_output, y_targets, output_path1 ,output_path2)
             sys.exit()
         #calculate contrastive loss
