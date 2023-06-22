@@ -1,0 +1,10 @@
+1 , train_loss, 0.17381449, train_accuracy, 0.514, 2023-06-06 19:08:22.407711
+2 , train_loss, 0.09668349, train_accuracy, 0.562, 2023-06-06 19:08:23.795647
+3 , train_loss, 0.07146719, train_accuracy, 0.51, 2023-06-06 19:08:25.173831
+4 , train_loss, 0.06609503, train_accuracy, 0.468, 2023-06-06 19:08:26.578770
+5 , train_loss, 0.060400844, train_accuracy, 0.488, 2023-06-06 19:08:27.990388
+6 , train_loss, 0.058966223, train_accuracy, 0.514, 2023-06-06 19:08:29.389040
+7 , train_loss, 0.051626388, train_accuracy, 0.534, 2023-06-06 19:08:30.785261
+8 , train_loss, 0.050615095, train_accuracy, 0.518, 2023-06-06 19:08:32.183704
+9 , train_loss, 0.0459924, train_accuracy, 0.54, 2023-06-06 19:08:33.566285
+10 , train_loss, 0.04336294, train_accuracy, 0.508, 2023-06-06 19:08:34.970747
