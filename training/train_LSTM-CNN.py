@@ -1,6 +1,7 @@
 import sys
 import os
 import re
+import itertools
 from sklearn.manifold import TSNE
 import numpy as np
 from preprocess_data import preprocess_for_Siamese_Net
@@ -171,7 +172,6 @@ class HammingLoss(torch.nn.Module):
         return hamming_loss, y_pred_sign
 
 def generate_siamese_data(action_df:pd,
-                          not_action_df:pd,
                           slide_length:int,
                           segment_data_length:int,
                           not_action_df_starting_point:int):
@@ -181,7 +181,7 @@ def generate_siamese_data(action_df:pd,
     """
 
     def slide_time_data(df:pd,slide_length:int,segment_data_length:int,
-                            is_wind_vel_converted: bool = True,
+                            is_wind_converted: bool = True,
                             is_temp_converted: bool = False,
                             is_humid_converted: bool = False,
                             is_gauss_converted: bool = True) ->list:
@@ -191,17 +191,17 @@ def generate_siamese_data(action_df:pd,
             - df (pd): 元のmerged_df
             - slide_length(int): スライド間隔(秒)
             - segment_data_length (int):データの分割窓長さ(秒)
-            - is _wind_vel_converted (bool) :風速を出力に入れるか
-            - is _temp_vel_converted (bool) :温度を出力に入れるか
-            - is _humid_vel_converted (bool) :湿度を出力に入れるか
-            - is _gauss_vel_converted (bool) :磁束密度を出力に入れるか
+            - is _wind_converted (bool) :風速を出力に入れるか
+            - is _temp_converted (bool) :温度を出力に入れるか
+            - is _humid_converted (bool) :湿度を出力に入れるか
+            - is _gauss_converted (bool) :磁束密度を出力に入れるか
 
         return:
             - segmented_datafarme_array(list)選択したデータをスライド出力したもの
         """
 
         #データを選ぶ
-        if is_wind_vel_converted == False:
+        if is_wind_converted == False:
             df = df.drop('V(m/s)', axis=1)
         
         if is_temp_converted == False:
@@ -227,26 +227,70 @@ def generate_siamese_data(action_df:pd,
     #出力配列
     action_feat1 = []
     action_feat2 = []
-    not_action_feat1 = []
-    not_action_feat2 = []
 
     #分割されたdf配列(この状態だとデータフレームの配列になる)
     action_segment_data_list = slide_time_data(action_df,slide_length,segment_data_length)
-    not_action_segment_data_list = slide_time_data(not_action_df[not_action_df_starting_point:not_action_df_starting_point+len(action_df)],
-                                                                 slide_length,segment_data_length)
 
     #df先頭の特徴量のリスト
     feat_list = list(action_segment_data_list[0].columns.values.tolist())
 
     #各配列のdfを配列に変換
-    for action_df,not_action_df in zip(action_segment_data_list,not_action_segment_data_list):
+    for action_df in action_segment_data_list:
         action_feat1.append(action_df[feat_list[0]].values)
-        not_action_feat1.append(not_action_df[feat_list[0]].values)
         action_feat2.append(action_df[feat_list[1]].values)
-        not_action_feat2.append(not_action_df[feat_list[1]].values)
-    return action_feat1,action_feat2,not_action_feat1,not_action_feat2 
+    return action_feat1,action_feat2
 
-def generate_npy_from_siamese_data(action_feat1:list,action_feat2:list,not_action_feat1:list,not_action_feat2:list):
+def process_action_files(data_type):
+
+    climo_files = sorted([f for f in os.listdir(f'data/csv/climomaster/{data_type}/')])
+    gauss_files = sorted([f for f in os.listdir(f'data/csv/ML-logger/{data_type}/')])
+
+    wind_list = []
+    gauss_list = []
+
+    for i, (climo_csv_path, gauss_csv_path) in enumerate(zip(climo_files, gauss_files)):
+        # ファイルパスを指定する
+        climo_path = f'data/csv/climomaster/{data_type}/' + climo_csv_path
+        gauss_path = f'data/csv/ML-logger/{data_type}/' + gauss_csv_path
+
+        # dfにする
+        merged_df = preprocess.convert_csv_to_mergedcsv(climo_path, gauss_path)
+        wind_vel, gauss = generate_siamese_data(merged_df, 4, 60, 300 * (i + 1))
+        wind_list.extend(wind_vel)
+        gauss_list.extend(gauss)
+    
+    return wind_list, gauss_list
+
+def process_no_files(data_type):
+
+    climo_files = sorted([f for f in os.listdir(f'data/csv/climomaster/{data_type}/')])
+    gauss_files = sorted([f for f in os.listdir(f'data/csv/ML-logger/{data_type}/')])
+
+    wind_list = []
+    gauss_list = []
+
+    for i, (climo_csv_path, gauss_csv_path) in enumerate(zip(climo_files, gauss_files)):
+        # ファイルパスを指定する
+        climo_path = f'data/csv/climomaster/{data_type}/' + climo_csv_path
+        gauss_path = f'data/csv/ML-logger/{data_type}/' + gauss_csv_path
+
+        # dfにする
+        merged_df = preprocess.convert_csv_to_mergedcsv(climo_path, gauss_path)
+        wind_vel, gauss = generate_siamese_data(merged_df, 4, 60, 300 * (i + 1))
+        wind_list.extend(wind_vel)
+        gauss_list.extend(gauss)
+    # 共通のランダムな順序を生成
+    random_order = random.sample(range(len(wind_list)), len(wind_list))
+
+    # 配列を共通のランダムな順序に並び替え
+    wind_list = [wind_list[i] for i in random_order]
+    gauss_list = [gauss_list[i] for i in random_order]
+    # それぞれの配列から20000個ずつ抽出
+    extracted_wind_list = wind_list[:20000]
+    extracted_gauss_list = gauss_list[:20000]    
+    return extracted_wind_list, extracted_gauss_list
+
+def generate_npy_from_siamese_data(action_feat1:list,action_feat2:list,not_action_feat1:list,not_action_feat2:list,additional_action_feat1:list,additional_action_feat2:list):
 
     """
     siamese dataをラベリングし、npyファイルに出力する関数
@@ -264,52 +308,48 @@ def generate_npy_from_siamese_data(action_feat1:list,action_feat2:list,not_actio
         labels(list):各データセットのラベル
     """
 
-    def labeling_for_action(action_feat:list,not_action_feat:list):
-
+    def labeling_for_action(action_feat: list, not_action_feat: list, additional_action_feat: list):
+        
         """
-        ある特徴量の行動を取るor取らないデータの配列の全ての組み合わせに対して(1,0,-1)のラベルを付ける
+        ある特徴量の行動を取るor取らないデータの配列の全ての組み合わせに対してラベル(0,1)を付ける
 
         args:
-            - action_feat(list):行動を取る場合の指定した特徴量データ
-            - not_action_feat(list):行動を取らない場合の指定した特徴量データ
+            - action_feat(list): 行動を取る場合の指定した特徴量データ
+            - not_action_feat(list): 行動を取らない場合の指定した特徴量データ
+            - additional_action_feat(list): 追加の行動を取る場合の指定した特徴量データ
         return:
-            - feat_a,feat_b,feat_y:特徴量データとラベル(1,0,-1)
+            - feat_a, feat_b, feat_y: 特徴量データとラベル
         """
 
-        #出力配列
         feat_a = []
         feat_b = []
         feat_y = []
 
-        #全ての組み合わせに対してラベルを付ける
-        for wave_1 in action_feat:
-            for wave_2 in action_feat:
+        for wave_1 in itertools.chain(action_feat, not_action_feat, additional_action_feat):
+            for wave_2 in itertools.chain(action_feat, not_action_feat, additional_action_feat):
                 feat_a.append(wave_1)
                 feat_b.append(wave_2)
-                feat_y.append([1,1])
-        for wave_1 in action_feat:
-            for wave_2 in not_action_feat:
-                feat_a.append(wave_1)
-                feat_b.append(wave_2)
-                feat_y.append([1,0])
 
-        for wave_1 in not_action_feat:
-            for wave_2 in action_feat:
-                feat_a.append(wave_1)
-                feat_b.append(wave_2)
-                feat_y.append([0,1])
+                if np.any(wave_1 == action_feat):
+                    label_1 = 1
+                elif np.any(wave_1 == not_action_feat):
+                    label_1 = 0
+                else:
+                    label_1 = 2
 
-        for wave_1 in not_action_feat:
-            for wave_2 in not_action_feat:
-                feat_a.append(wave_1)
-                feat_b.append(wave_2)
-                feat_y.append([0,0])
+                if np.any(wave_2 == action_feat):
+                    label_2 = 1
+                elif np.any(wave_2 == not_action_feat):
+                    label_2 = 0
+                else:
+                    label_2 = 2
 
-        return feat_a,feat_b,feat_y
+                feat_y.append([label_1, label_2])
 
-    feat1_a,feat1_b,label = labeling_for_action(action_feat1,not_action_feat1)
-    feat2_a,feat2_b,_ = labeling_for_action(action_feat2,not_action_feat2)
-
+        return feat_a, feat_b, feat_y
+    
+    feat1_a,feat1_b,label = labeling_for_action(action_feat1[:200],not_action_feat1[:1000],additional_action_feat1[:200])
+    feat2_a,feat2_b,_ = labeling_for_action(action_feat2[:200],not_action_feat2[:1000],additional_action_feat2[:200])
 
     # Combine the arrays into a list of tuples
     combined = list(zip(feat1_a, feat1_b, feat2_a, feat2_b, label))
@@ -411,42 +451,19 @@ def visualize_embedding(true_gauss_tensor, true_wind_tensor, genuine_output, lab
 
     # genuine_outputのt-SNE可視化
     visualize_tsne(genuine_output_data, labels, 'genuine_output' , output_file2)
-
 """
-climo_walk_files = sorted([f for f in os.listdir('data/csv/climomaster') if 'walk' in f])
-gauss_walk_files = sorted([f for f in os.listdir('data/csv/ML-logger') if 'walk' in f])
-
-walk_wind_vel_list = []
-walk_gauss_list = []
-no_wind_vel_list = []
-no_gauss_list = []
-
 preprocess = preprocess_for_Siamese_Net()
 
-for i, (climo_csv_path, gauss_csv_path) in enumerate(zip(climo_walk_files,gauss_walk_files)):
-    
-    #ファイルパスを指定する
-    climo_walk_path = 'data/csv/climomaster/' + climo_csv_path
-    gauss_walk_path = 'data/csv/ML-logger/' + gauss_csv_path
-    climo_no_path = re.sub(r'-walk\d+', '', climo_walk_path)
-    gauss_no_path = re.sub(r'-walk\d+', '', gauss_walk_path)
+walk_wind_list, walk_gauss_list = process_action_files('walk')
+air_wind_list, air_gauss_list = process_action_files('air')
+no_wind_list, no_gauss_list = process_no_files('no')
 
-    #dfにする
-    walk_merged_df = preprocess.convert_csv_to_mergedcsv(climo_walk_path,gauss_walk_path)
-    no_merged_df = preprocess.convert_csv_to_mergedcsv(climo_no_path,gauss_no_path)
-
-    walk_wind_vel,walk_gauss,no_wind_vel,no_gauss = generate_siamese_data(walk_merged_df,no_merged_df,4,60,300*(i+1))
-
-    walk_wind_vel_list.extend(walk_wind_vel)
-    walk_gauss_list.extend(walk_gauss)
-    no_wind_vel_list.extend(no_wind_vel)
-    no_gauss_list.extend(no_gauss)
-
-    
-wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_siamese_data(walk_wind_vel_list,
+wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_siamese_data(walk_wind_list,
                                                                                       walk_gauss_list,
-                                                                                      no_wind_vel_list,
-                                                                                      no_gauss_list)
+                                                                                      no_wind_list,
+                                                                                      no_gauss_list,                                                                                      
+                                                                                      air_wind_list,
+                                                                                      air_gauss_list)
 
 #npyファイルに変換
 datadir = "data/train-npy/"
@@ -457,7 +474,6 @@ np.save(datadir + 'gauss_a_set', gauss_a_set)
 np.save(datadir + 'gauss_b_set', gauss_b_set)
 np.save(datadir + 'labels', labels)
 """
-
 datadir = "data/train-npy/"
 checkpoints_dir = "data/checkpoints/"
 logs_dir = "data/logs/"
@@ -634,12 +650,12 @@ datadir = "data/train-npy/"
 logs_dir = "data/logs/"
 
 """
-climo_walk_files = sorted([f for f in os.listdir('data/csv/climomaster/test') if 'walk' in f])
-gauss_walk_files = sorted([f for f in os.listdir('data/csv/ML-logger/test') if 'walk' in f])
+climo_walk_files = sorted([f for f in os.listdir('data/csv/climomaster/test')])
+gauss_walk_files = sorted([f for f in os.listdir('data/csv/ML-logger/test')])
 
-walk_wind_vel_list = []
+walk_wind_list = []
 walk_gauss_list = []
-no_wind_vel_list = []
+no_wind_list = []
 no_gauss_list = []
 
 preprocess = preprocess_for_Siamese_Net()
@@ -658,15 +674,15 @@ for i, (climo_csv_path, gauss_csv_path) in enumerate(zip(climo_walk_files,gauss_
 
     walk_wind_vel,walk_gauss,no_wind_vel,no_gauss = generate_siamese_data(walk_merged_df,no_merged_df,4,60,300*(i+1))
 
-    walk_wind_vel_list.extend(walk_wind_vel)
+    walk_wind_list.extend(walk_wind_vel)
     walk_gauss_list.extend(walk_gauss)
-    no_wind_vel_list.extend(no_wind_vel)
+    no_wind_list.extend(no_wind_vel)
     no_gauss_list.extend(no_gauss)
 
 
-wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_siamese_data(walk_wind_vel_list,
+wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_siamese_data(walk_wind_list,
                                                                                       walk_gauss_list,
-                                                                                      no_wind_vel_list,
+                                                                                      no_wind_list,
                                                                                       no_gauss_list)
 
 #npyファイルに変換

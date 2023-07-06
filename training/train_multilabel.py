@@ -511,11 +511,10 @@ for epoch in range(1, epochs+1):
         print(f"EPOCH {epoch}| Val: contrastive loss {np.mean(steps_const_losses)}| identifical accuracy {np.mean(steps_identifical_accu)} ")
         print(f"EPOCH {epoch}| Val: hamming loss {np.mean(steps_hamming_losses)}| classifier accuracy {np.mean(steps_classifier_accu)} ")
         print(f"EPOCH {epoch}| Val: action accuracy {np.mean(steps_classifier_accu_0)}| no action accuracy {np.mean(steps_classifier_accu_1)} ")
-        const_file2.write("%s , %s, %s, %s, %s, %s\n" % (str(epoch), "val_loss", str(np.mean(steps_const_losses)), "val_accuracy", str(np.mean(steps_identifical_accu)), now_time))
-        classifier_file2.write("%s , %s, %s, %s, %s, %s, %s, %s,%s,%s\n" % (str(epoch), "val_loss", str(np.mean(steps_hamming_losses)), "val_accuracy", str(np.mean(steps_classifier_accu)),"val_accuracy_action", str(np.mean(steps_classifier_accu_0)),"val_accuracy_no_action", str(np.mean(steps_classifier_accu_1)), now_time))
+        const_file2.write("%s, %s, %s, %s, %s, %s\n" % (str(epoch), "val_loss", str(np.mean(steps_const_losses)), "val_accuracy", str(np.mean(steps_identifical_accu)), now_time))
+        classifier_file2.write("%s, %s, %s, %s, %s, %s, %s, %s,%s,%s\n" % (str(epoch), "val_loss", str(np.mean(steps_hamming_losses)), "val_accuracy", str(np.mean(steps_classifier_accu)),"val_accuracy_action", str(np.mean(steps_classifier_accu_0)),"val_accuracy_no_action", str(np.mean(steps_classifier_accu_1)), now_time))
+
 const_file1.close()
 classifier_file1.close()
-
 const_file2.close()
 classifier_file2.close()
-
