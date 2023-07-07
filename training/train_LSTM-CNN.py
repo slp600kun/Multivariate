@@ -512,7 +512,7 @@ valdataset = DummyDataset(scaled_gauss[train_data_len:val_data_len],scaled_wind[
 
 epochs = 10
 class_epochs = 30
-batch_size = 1000
+batch_size = 100
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
 
