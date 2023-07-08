@@ -1,7 +1,6 @@
 import sys
 import os
 import re
-import itertools
 from sklearn.manifold import TSNE
 import numpy as np
 from preprocess_data import preprocess_for_Siamese_Net
@@ -172,6 +171,7 @@ class HammingLoss(torch.nn.Module):
         return hamming_loss, y_pred_sign
 
 def generate_siamese_data(action_df:pd,
+                          not_action_df:pd,
                           slide_length:int,
                           segment_data_length:int,
                           not_action_df_starting_point:int):
@@ -181,7 +181,7 @@ def generate_siamese_data(action_df:pd,
     """
 
     def slide_time_data(df:pd,slide_length:int,segment_data_length:int,
-                            is_wind_converted: bool = True,
+                            is_wind_vel_converted: bool = True,
                             is_temp_converted: bool = False,
                             is_humid_converted: bool = False,
                             is_gauss_converted: bool = True) ->list:
@@ -191,17 +191,17 @@ def generate_siamese_data(action_df:pd,
             - df (pd): 元のmerged_df
             - slide_length(int): スライド間隔(秒)
             - segment_data_length (int):データの分割窓長さ(秒)
-            - is _wind_converted (bool) :風速を出力に入れるか
-            - is _temp_converted (bool) :温度を出力に入れるか
-            - is _humid_converted (bool) :湿度を出力に入れるか
-            - is _gauss_converted (bool) :磁束密度を出力に入れるか
+            - is _wind_vel_converted (bool) :風速を出力に入れるか
+            - is _temp_vel_converted (bool) :温度を出力に入れるか
+            - is _humid_vel_converted (bool) :湿度を出力に入れるか
+            - is _gauss_vel_converted (bool) :磁束密度を出力に入れるか
 
         return:
             - segmented_datafarme_array(list)選択したデータをスライド出力したもの
         """
 
         #データを選ぶ
-        if is_wind_converted == False:
+        if is_wind_vel_converted == False:
             df = df.drop('V(m/s)', axis=1)
         
         if is_temp_converted == False:
@@ -227,70 +227,26 @@ def generate_siamese_data(action_df:pd,
     #出力配列
     action_feat1 = []
     action_feat2 = []
+    not_action_feat1 = []
+    not_action_feat2 = []
 
     #分割されたdf配列(この状態だとデータフレームの配列になる)
     action_segment_data_list = slide_time_data(action_df,slide_length,segment_data_length)
+    not_action_segment_data_list = slide_time_data(not_action_df[not_action_df_starting_point:not_action_df_starting_point+len(action_df)],
+                                                                 slide_length,segment_data_length)
 
     #df先頭の特徴量のリスト
     feat_list = list(action_segment_data_list[0].columns.values.tolist())
 
     #各配列のdfを配列に変換
-    for action_df in action_segment_data_list:
+    for action_df,not_action_df in zip(action_segment_data_list,not_action_segment_data_list):
         action_feat1.append(action_df[feat_list[0]].values)
+        not_action_feat1.append(not_action_df[feat_list[0]].values)
         action_feat2.append(action_df[feat_list[1]].values)
-    return action_feat1,action_feat2
+        not_action_feat2.append(not_action_df[feat_list[1]].values)
+    return action_feat1,action_feat2,not_action_feat1,not_action_feat2 
 
-def process_action_files(data_type):
-
-    climo_files = sorted([f for f in os.listdir(f'data/csv/climomaster/{data_type}/')])
-    gauss_files = sorted([f for f in os.listdir(f'data/csv/ML-logger/{data_type}/')])
-
-    wind_list = []
-    gauss_list = []
-
-    for i, (climo_csv_path, gauss_csv_path) in enumerate(zip(climo_files, gauss_files)):
-        # ファイルパスを指定する
-        climo_path = f'data/csv/climomaster/{data_type}/' + climo_csv_path
-        gauss_path = f'data/csv/ML-logger/{data_type}/' + gauss_csv_path
-
-        # dfにする
-        merged_df = preprocess.convert_csv_to_mergedcsv(climo_path, gauss_path)
-        wind_vel, gauss = generate_siamese_data(merged_df, 4, 60, 300 * (i + 1))
-        wind_list.extend(wind_vel)
-        gauss_list.extend(gauss)
-    
-    return wind_list, gauss_list
-
-def process_no_files(data_type):
-
-    climo_files = sorted([f for f in os.listdir(f'data/csv/climomaster/{data_type}/')])
-    gauss_files = sorted([f for f in os.listdir(f'data/csv/ML-logger/{data_type}/')])
-
-    wind_list = []
-    gauss_list = []
-
-    for i, (climo_csv_path, gauss_csv_path) in enumerate(zip(climo_files, gauss_files)):
-        # ファイルパスを指定する
-        climo_path = f'data/csv/climomaster/{data_type}/' + climo_csv_path
-        gauss_path = f'data/csv/ML-logger/{data_type}/' + gauss_csv_path
-
-        # dfにする
-        merged_df = preprocess.convert_csv_to_mergedcsv(climo_path, gauss_path)
-        wind_vel, gauss = generate_siamese_data(merged_df, 4, 60, 300 * (i + 1))
-        wind_list.extend(wind_vel)
-        gauss_list.extend(gauss)
-    # 共通のランダムな順序を生成
-    random_order = random.sample(range(len(wind_list)), len(wind_list))
-
-    # 配列を共通のランダムな順序に並び替え
-    wind_list = [wind_list[i] for i in random_order]
-    gauss_list = [gauss_list[i] for i in random_order]
-    # それぞれの配列から20000個ずつ抽出
-    extracted_wind_list = wind_list[:20000]
-    extracted_gauss_list = gauss_list[:20000]    
-    return extracted_wind_list, extracted_gauss_list
-
-def generate_npy_from_siamese_data(action_feat1:list,action_feat2:list,not_action_feat1:list,not_action_feat2:list,additional_action_feat1:list,additional_action_feat2:list):
+def generate_npy_from_siamese_data(action_feat1:list,action_feat2:list,not_action_feat1:list,not_action_feat2:list):
 
     """
     siamese dataをラベリングし、npyファイルに出力する関数
@@ -308,75 +264,52 @@ def generate_npy_from_siamese_data(action_feat1:list,action_feat2:list,not_actio
         labels(list):各データセットのラベル
     """
 
-    def labeling_for_action(action_feat: list, not_action_feat: list, additional_action_feat: list):
-        
+    def labeling_for_action(action_feat:list,not_action_feat:list):
+
         """
-        ある特徴量の行動を取るor取らないデータの配列の全ての組み合わせに対してラベル(0,1)を付ける
+        ある特徴量の行動を取るor取らないデータの配列の全ての組み合わせに対して(1,0,-1)のラベルを付ける
 
         args:
-            - action_feat(list): 行動を取る場合の指定した特徴量データ
-            - not_action_feat(list): 行動を取らない場合の指定した特徴量データ
-            - additional_action_feat(list): 追加の行動を取る場合の指定した特徴量データ
+            - action_feat(list):行動を取る場合の指定した特徴量データ
+            - not_action_feat(list):行動を取らない場合の指定した特徴量データ
         return:
-            - feat_a, feat_b, feat_y: 特徴量データとラベル
+            - feat_a,feat_b,feat_y:特徴量データとラベル(1,0,-1)
         """
 
+        #出力配列
         feat_a = []
         feat_b = []
         feat_y = []
 
-        for wave_1 in not_action_feat:
-            for wave_2 in not_action_feat:
-                feat_a.append(wave_1)
-                feat_b.append(wave_2)
-                feat_y.append([0,0])
-        for wave_1 in not_action_feat:
-            for wave_2 in action_feat:
-                feat_a.append(wave_1)
-                feat_b.append(wave_2)
-                feat_y.append([0,1])
-        for wave_1 in not_action_feat:
-            for wave_2 in additional_action_feat:
-                feat_a.append(wave_1)
-                feat_b.append(wave_2)
-                feat_y.append([0,2])
-
-        for wave_1 in action_feat:
-            for wave_2 in not_action_feat:
-                feat_a.append(wave_1)
-                feat_b.append(wave_2)
-                feat_y.append([1,0])
+        #全ての組み合わせに対してラベルを付ける
         for wave_1 in action_feat:
             for wave_2 in action_feat:
                 feat_a.append(wave_1)
                 feat_b.append(wave_2)
                 feat_y.append([1,1])
         for wave_1 in action_feat:
-            for wave_2 in additional_action_feat:
-                feat_a.append(wave_1)
-                feat_b.append(wave_2)
-                feat_y.append([1,2])
-
-        for wave_1 in additional_action_feat:
             for wave_2 in not_action_feat:
                 feat_a.append(wave_1)
                 feat_b.append(wave_2)
-                feat_y.append([2,0])
-        for wave_1 in additional_action_feat:
+                feat_y.append([1,0])
+
+        for wave_1 in not_action_feat:
             for wave_2 in action_feat:
                 feat_a.append(wave_1)
                 feat_b.append(wave_2)
-                feat_y.append([2,1])
-        for wave_1 in additional_action_feat:
-            for wave_2 in additional_action_feat:
+                feat_y.append([0,1])
+
+        for wave_1 in not_action_feat:
+            for wave_2 in not_action_feat:
                 feat_a.append(wave_1)
                 feat_b.append(wave_2)
-                feat_y.append([2,2])
+                feat_y.append([0,0])
 
-        return feat_a, feat_b, feat_y
-    
-    feat1_a,feat1_b,label = labeling_for_action(action_feat1[:200],not_action_feat1[:1000],additional_action_feat1[:200])
-    feat2_a,feat2_b,_ = labeling_for_action(action_feat2[:200],not_action_feat2[:1000],additional_action_feat2[:200])
+        return feat_a,feat_b,feat_y
+
+    feat1_a,feat1_b,label = labeling_for_action(action_feat1,not_action_feat1)
+    feat2_a,feat2_b,_ = labeling_for_action(action_feat2,not_action_feat2)
+
 
     # Combine the arrays into a list of tuples
     combined = list(zip(feat1_a, feat1_b, feat2_a, feat2_b, label))
@@ -419,53 +352,32 @@ class ContrastiveLoss(nn.Module):
         loss = torch.mean(torch.tensor(label, device=device) * distance.pow(2) + (1 - torch.tensor(label, device=device)) * torch.clamp(self.margin - distance, min=0).pow(2))
         return loss
 
-class MLP(nn.Module):
+class FC(nn.Module):
     def __init__(self,num_classes):
         super().__init__()
-        self.fc1 = nn.Linear(32, 128)
-        self.fc2 = nn.Linear(128, 512)
-        self.fc3 = nn.Linear(512, 128)
-        self.fc4 = nn.Linear(128,num_classes)
-        self.dropout1 = nn.Dropout2d(0.2)
-        self.bn_block_1 = nn.BatchNorm1d(128)
-        self.bn_block_2 = nn.BatchNorm1d(512)
-        self.bn_block_3 = nn.BatchNorm1d(128)
-        self.dropout2 = nn.Dropout2d(0.4)
+        self.fc1 = nn.Linear(128, 64)
+        self.fc2 = nn.Linear(64,num_classes)
+        self.dropout1 = nn.Dropout(0.3)
+        self.bn_block_1 = nn.BatchNorm1d(64)
         self.relu = nn.PReLU()
-        #self.sigmoid = nn.Sigmoid()
 
-    def forward(self, x):
-        x = self.relu(self.fc1(x))
+    def forward(self, gauss_input,wind_input):
+        x = self.encoder(gauss_input,wind_input)
+        x = self.fc1(x)
+        x = self.relu(x)
         x = self.dropout1(x)
         x = self.bn_block_1(x)
-        x = self.relu(self.fc2(x))
-        x = self.dropout2(x)
-        x = self.bn_block_2(x)
-        x = self.relu(self.fc3(x))
-        x = self.dropout2(x)
-        x = self.bn_block_3(x)
-        x = self.fc4(x)
+        x = self.fc2(x)
         return x
 
 # 入力データをt-SNEで可視化
 def visualize_tsne(data, labels, title, output_file=None):
     tsne = TSNE(n_components=2, random_state=42)
     tsne_data = tsne.fit_transform(data)
-    # テンソルをNumPy配列に変換
-    labels = labels.numpy()
-    # ラベルごとの色のリストを作成
-    unique_labels = np.unique(labels)
-    colors = ['red', 'green', 'blue']  # 各ラベルに対する色を指定
+
     plt.figure(figsize=(10, 8))
-    # 散布図を作成し、ラベルごとに色を設定
-    for label, color in zip(unique_labels, colors):
-        indices = np.where(labels == label)
-        plt.scatter(tsne_data[indices, 0], tsne_data[indices, 1], c=color, label=str(label),cmap='viridis')    
-
+    plt.scatter(tsne_data[:, 0], tsne_data[:, 1], c=labels, cmap='viridis')
     plt.title(title)
-
-    # 凡例の表示
-    plt.legend()
     plt.colorbar()
     if output_file:
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
@@ -489,19 +401,42 @@ def visualize_embedding(true_gauss_tensor, true_wind_tensor, genuine_output, lab
 
     # genuine_outputのt-SNE可視化
     visualize_tsne(genuine_output_data, labels, 'genuine_output' , output_file2)
+
 """
+climo_walk_files = sorted([f for f in os.listdir('data/csv/climomaster') if 'walk' in f])
+gauss_walk_files = sorted([f for f in os.listdir('data/csv/ML-logger') if 'walk' in f])
+
+walk_wind_vel_list = []
+walk_gauss_list = []
+no_wind_vel_list = []
+no_gauss_list = []
+
 preprocess = preprocess_for_Siamese_Net()
 
-walk_wind_list, walk_gauss_list = process_action_files('walk')
-air_wind_list, air_gauss_list = process_action_files('air')
-no_wind_list, no_gauss_list = process_no_files('no')
+for i, (climo_csv_path, gauss_csv_path) in enumerate(zip(climo_walk_files,gauss_walk_files)):
+    
+    #ファイルパスを指定する
+    climo_walk_path = 'data/csv/climomaster/' + climo_csv_path
+    gauss_walk_path = 'data/csv/ML-logger/' + gauss_csv_path
+    climo_no_path = re.sub(r'-walk\d+', '', climo_walk_path)
+    gauss_no_path = re.sub(r'-walk\d+', '', gauss_walk_path)
 
-wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_siamese_data(walk_wind_list,
+    #dfにする
+    walk_merged_df = preprocess.convert_csv_to_mergedcsv(climo_walk_path,gauss_walk_path)
+    no_merged_df = preprocess.convert_csv_to_mergedcsv(climo_no_path,gauss_no_path)
+
+    walk_wind_vel,walk_gauss,no_wind_vel,no_gauss = generate_siamese_data(walk_merged_df,no_merged_df,4,60,300*(i+1))
+
+    walk_wind_vel_list.extend(walk_wind_vel)
+    walk_gauss_list.extend(walk_gauss)
+    no_wind_vel_list.extend(no_wind_vel)
+    no_gauss_list.extend(no_gauss)
+
+    
+wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_siamese_data(walk_wind_vel_list,
                                                                                       walk_gauss_list,
-                                                                                      no_wind_list,
-                                                                                      no_gauss_list,                                                                                      
-                                                                                      air_wind_list,
-                                                                                      air_gauss_list)
+                                                                                      no_wind_vel_list,
+                                                                                      no_gauss_list)
 
 #npyファイルに変換
 datadir = "data/train-npy/"
@@ -512,6 +447,7 @@ np.save(datadir + 'gauss_a_set', gauss_a_set)
 np.save(datadir + 'gauss_b_set', gauss_b_set)
 np.save(datadir + 'labels', labels)
 """
+
 datadir = "data/train-npy/"
 checkpoints_dir = "data/checkpoints/"
 logs_dir = "data/logs/"
@@ -519,23 +455,22 @@ logs_dir = "data/logs/"
 true_gauss = np.load(datadir + 'gauss_a_set.npy')
 true_wind = np.load(datadir + 'wind_a_set.npy')
 label = np.load(datadir + 'labels.npy')
+
 n_max_gpus = torch.cuda.device_count()
 print(f'{n_max_gpus} GPUs available')
 n_gpus = min(2, n_max_gpus)
 print(f'Using {n_gpus} GPUs')
 
-train_data_len = 3000
-val_data_len = 3500
+train_data_len = 30000
+val_data_len = 35000
 
 #識別学習に用いるone-hot表現のラベルを作成
-one_hot_labels = torch.zeros(val_data_len, 3, dtype=torch.float)
+one_hot_labels = torch.zeros(val_data_len, 2, dtype=torch.float)
 for step, genuine_label in enumerate(label[:val_data_len][:,0]):
-    if genuine_label == 0:
-        one_hot_labels[step]=torch.tensor([1,0,0],dtype=torch.float)
     if genuine_label == 1:
-        one_hot_labels[step]=torch.tensor([0,1,0],dtype=torch.float)
-    if genuine_label == 2:
-        one_hot_labels[step]=torch.tensor([0,0,1],dtype=torch.float)
+        one_hot_labels[step]=torch.tensor([1,0],dtype=torch.float)
+    if genuine_label == 0:
+        one_hot_labels[step]=torch.tensor([0,1],dtype=torch.float)
 
 scaler_gauss = StandardScaler()
 scaler_wind = StandardScaler()
@@ -549,9 +484,9 @@ scaled_wind = scaler_wind.transform(true_wind)
 traindataset = DummyDataset(scaled_gauss[0:train_data_len],scaled_wind[0:train_data_len],one_hot_labels[0:train_data_len])
 valdataset = DummyDataset(scaled_gauss[train_data_len:val_data_len],scaled_wind[train_data_len:val_data_len],one_hot_labels[train_data_len:val_data_len])
 
-epochs = 10
-class_epochs = 30
-batch_size = 100
+epochs = 15
+class_epochs = 15
+batch_size = 1000
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
 
@@ -561,7 +496,7 @@ model.to(device)
 lossfn = ContrastiveLoss().to(device)
 
 cont_optimizer = torch.optim.Adam(model.parameters(), lr=0.00001,weight_decay=0.01)
-cont_scheduler = torch.optim.lr_scheduler.StepLR(cont_optimizer, step_size=5, gamma=0.1, verbose=True)
+cont_scheduler = torch.optim.lr_scheduler.StepLR(cont_optimizer, step_size=10, gamma=0.1, verbose=True)
 
 model.train()
 
@@ -577,17 +512,16 @@ for epoch in range(1, epochs+1):
     train_cont_losses = []
     val_cont_losses = []
     embedding_vector = []
+ 
 
     dist_model_checkpoints = checkpoints_dir + "dist_model_" + str(epoch) + ".pt"
     for steps, (train_gauss_tensor, train_wind_tensor, train_labels) in tqdm(enumerate(train_dataloader),total=len(train_dataloader)):        
+
         cont_optimizer.zero_grad() 
         train_genuine_output = model(train_gauss_tensor.to(device), train_wind_tensor.to(device))
         _, y_targets = train_labels.clone().max(dim=1)
         output_path1 = "plot/data-tSNE.png"
         output_path2 = "plot/vector-tSNE.png"
-        if epoch == 2:
-            visualize_embedding(train_gauss_tensor, train_wind_tensor, train_genuine_output, y_targets, output_path1 ,output_path2)
-            sys.exit()
         #calculate contrastive loss
         train_cont_loss = lossfn(train_genuine_output, train_labels.to(device),device)
         train_cont_losses.append(train_cont_loss.cpu().detach().numpy())        
@@ -612,7 +546,7 @@ model_path = checkpoints_dir + "dist_model_" + str(epoch) + ".pt"
 model.load_state_dict(torch.load(model_path))
 
 # Create an instance of the CNN model
-identify_model = CNN(num_classes=2)
+identify_model = FC(num_classes=2)
 identify_model.encoder = model.embedding
 identify_model.to(device1)
 # モデルの一部を凍結
@@ -621,7 +555,7 @@ for param in identify_model.encoder.parameters():
 
 criterion = nn.CrossEntropyLoss().to(device1)
 cross_en_optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, identify_model.parameters()), lr=0.0001,weight_decay=0.01)
-cross_en_scheduler = torch.optim.lr_scheduler.StepLR(cross_en_optimizer, step_size=10, gamma=0.1, verbose=True)
+cross_en_scheduler = torch.optim.lr_scheduler.StepLR(cross_en_optimizer, step_size=5, gamma=0.1, verbose=True)
 
 for epoch in range(1, class_epochs+1):
     identify_model.train()
@@ -682,16 +616,17 @@ for epoch in range(1, class_epochs+1):
         file2.write("%s, %s, %s, %s, %s, %s\n" % (str(epoch), "val_cross_en_loss", str(np.mean(val_cross_en_losses)), "val_accuracy", str(np.mean(val_class_accuracies)), now_time))
 file1.close()
 file2.close()
-"""
+
 datadir = "data/train-npy/"
 logs_dir = "data/logs/"
 
-climo_walk_files = sorted([f for f in os.listdir('data/csv/climomaster/test')])
-gauss_walk_files = sorted([f for f in os.listdir('data/csv/ML-logger/test')])
+"""
+climo_walk_files = sorted([f for f in os.listdir('data/csv/climomaster/test') if 'walk' in f])
+gauss_walk_files = sorted([f for f in os.listdir('data/csv/ML-logger/test') if 'walk' in f])
 
-walk_wind_list = []
+walk_wind_vel_list = []
 walk_gauss_list = []
-no_wind_list = []
+no_wind_vel_list = []
 no_gauss_list = []
 
 preprocess = preprocess_for_Siamese_Net()
@@ -710,15 +645,15 @@ for i, (climo_csv_path, gauss_csv_path) in enumerate(zip(climo_walk_files,gauss_
 
     walk_wind_vel,walk_gauss,no_wind_vel,no_gauss = generate_siamese_data(walk_merged_df,no_merged_df,4,60,300*(i+1))
 
-    walk_wind_list.extend(walk_wind_vel)
+    walk_wind_vel_list.extend(walk_wind_vel)
     walk_gauss_list.extend(walk_gauss)
-    no_wind_list.extend(no_wind_vel)
+    no_wind_vel_list.extend(no_wind_vel)
     no_gauss_list.extend(no_gauss)
 
 
-wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_siamese_data(walk_wind_list,
+wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_siamese_data(walk_wind_vel_list,
                                                                                       walk_gauss_list,
-                                                                                      no_wind_list,
+                                                                                      no_wind_vel_list,
                                                                                       no_gauss_list)
 
 #npyファイルに変換
@@ -729,7 +664,7 @@ np.save(datadir + 'test_wind_b_set', wind_b_set)
 np.save(datadir + 'test_gauss_a_set', gauss_a_set)
 np.save(datadir + 'test_gauss_b_set', gauss_b_set)
 np.save(datadir + 'test_labels', labels)
-
+"""
 
 #テストデータ
 test_true_gauss = np.load(datadir + 'test_gauss_a_set.npy')
@@ -797,4 +732,3 @@ print(f"steps f1 score: {f1}")
 file3 = open(logs_dir + "test_LSTM-CNN_metrics.txt","w")
 file3.write("%s,%s,\n%s,%s,\n%s,%s,\n%s,%s,\n" %("Accuracy",str(acc),"Precision",str(prec),"Recall",str(recall),"F1 score",str(f1)))
 file3.close()
-"""
