@@ -524,12 +524,13 @@ print(f'{n_max_gpus} GPUs available')
 n_gpus = min(2, n_max_gpus)
 print(f'Using {n_gpus} GPUs')
 
-train_data_len = 30000
-val_data_len = 35000
+train_data_len = 3000
+val_data_len = 3500
+test_data_len = 5000
 
 #識別学習に用いるone-hot表現のラベルを作成
-one_hot_labels = torch.zeros(val_data_len, 3, dtype=torch.float)
-for step, genuine_label in enumerate(label[:val_data_len][:,0]):
+one_hot_labels = torch.zeros(test_data_len, 3, dtype=torch.float)
+for step, genuine_label in enumerate(label[:test_data_len][:,0]):
     if genuine_label == 0:
         one_hot_labels[step]=torch.tensor([1,0,0],dtype=torch.float)
     if genuine_label == 1:
@@ -549,8 +550,8 @@ scaled_wind = scaler_wind.transform(true_wind)
 traindataset = DummyDataset(scaled_gauss[0:train_data_len],scaled_wind[0:train_data_len],one_hot_labels[0:train_data_len])
 valdataset = DummyDataset(scaled_gauss[train_data_len:val_data_len],scaled_wind[train_data_len:val_data_len],one_hot_labels[train_data_len:val_data_len])
 
-epochs = 10
-class_epochs = 30
+epochs = 1
+class_epochs = 1
 batch_size = 100
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
@@ -585,9 +586,6 @@ for epoch in range(1, epochs+1):
         _, y_targets = train_labels.clone().max(dim=1)
         output_path1 = "plot/data-tSNE.png"
         output_path2 = "plot/vector-tSNE.png"
-        if epoch == 10:
-            visualize_embedding(train_gauss_tensor, train_wind_tensor, train_genuine_output, y_targets, output_path1 ,output_path2)
-            sys.exit()
         #calculate contrastive loss
         train_cont_loss = lossfn(train_genuine_output, train_labels.to(device),device)
         train_cont_losses.append(train_cont_loss.cpu().detach().numpy())        
@@ -612,7 +610,7 @@ model_path = checkpoints_dir + "dist_model_" + str(epoch) + ".pt"
 model.load_state_dict(torch.load(model_path))
 
 # Create an instance of the CNN model
-identify_model = CNN(num_classes=2)
+identify_model = CNN(num_classes=3)
 identify_model.encoder = model.embedding
 identify_model.to(device1)
 # モデルの一部を凍結
@@ -643,7 +641,7 @@ for epoch in range(1, class_epochs+1):
         train_outputs_softmax = torch.softmax(train_outputs,dim=1)
         train_predicted_classes = torch.argmax(train_outputs_softmax, dim=1)
         # one-hot表現に変換
-        train_predicted_labels = torch.zeros(train_outputs.size(0), 2)
+        train_predicted_labels = torch.zeros(train_outputs.size(0), 3)
         train_predicted_labels.scatter_(1, train_predicted_classes.cpu().unsqueeze(1), 1)
         train_correct = (train_predicted_labels.to(device1) == train_labels.to(device1)).sum().item()
         train_total = train_labels.numel()
@@ -671,7 +669,7 @@ for epoch in range(1, class_epochs+1):
             val_outputs_softmax = torch.softmax(val_outputs,dim=1)
             val_predicted_classes = torch.argmax(val_outputs_softmax, dim=1)
             # one-hot表現に変換
-            val_predicted_labels = torch.zeros(val_outputs.size(0), 2)
+            val_predicted_labels = torch.zeros(val_outputs.size(0), 3)
             val_predicted_labels.scatter_(1, val_predicted_classes.cpu().unsqueeze(1), 1)
             val_correct = (val_predicted_labels.to(device1) == val_labels.to(device1)).sum().item()
             val_total = val_labels.numel()
@@ -682,73 +680,8 @@ for epoch in range(1, class_epochs+1):
         file2.write("%s, %s, %s, %s, %s, %s\n" % (str(epoch), "val_cross_en_loss", str(np.mean(val_cross_en_losses)), "val_accuracy", str(np.mean(val_class_accuracies)), now_time))
 file1.close()
 file2.close()
-"""
-datadir = "data/train-npy/"
-logs_dir = "data/logs/"
 
-climo_walk_files = sorted([f for f in os.listdir('data/csv/climomaster/test')])
-gauss_walk_files = sorted([f for f in os.listdir('data/csv/ML-logger/test')])
-
-walk_wind_list = []
-walk_gauss_list = []
-no_wind_list = []
-no_gauss_list = []
-
-preprocess = preprocess_for_Siamese_Net()
-
-for i, (climo_csv_path, gauss_csv_path) in enumerate(zip(climo_walk_files,gauss_walk_files)):
-
-    #ファイルパスを指定する
-    climo_walk_path = 'data/csv/climomaster/test/' + climo_csv_path
-    gauss_walk_path = 'data/csv/ML-logger/test/' + gauss_csv_path
-    climo_no_path = re.sub(r'-walk\d+', '', climo_walk_path)
-    gauss_no_path = re.sub(r'-walk\d+', '', gauss_walk_path)
-
-    #dfにする
-    walk_merged_df = preprocess.convert_csv_to_mergedcsv(climo_walk_path,gauss_walk_path)
-    no_merged_df = preprocess.convert_csv_to_mergedcsv(climo_no_path,gauss_no_path)
-
-    walk_wind_vel,walk_gauss,no_wind_vel,no_gauss = generate_siamese_data(walk_merged_df,no_merged_df,4,60,300*(i+1))
-
-    walk_wind_list.extend(walk_wind_vel)
-    walk_gauss_list.extend(walk_gauss)
-    no_wind_list.extend(no_wind_vel)
-    no_gauss_list.extend(no_gauss)
-
-
-wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_siamese_data(walk_wind_list,
-                                                                                      walk_gauss_list,
-                                                                                      no_wind_list,
-                                                                                      no_gauss_list)
-
-#npyファイルに変換
-datadir = "data/train-npy/"
-
-np.save(datadir + 'test_wind_a_set', wind_a_set)
-np.save(datadir + 'test_wind_b_set', wind_b_set)
-np.save(datadir + 'test_gauss_a_set', gauss_a_set)
-np.save(datadir + 'test_gauss_b_set', gauss_b_set)
-np.save(datadir + 'test_labels', labels)
-
-
-#テストデータ
-test_true_gauss = np.load(datadir + 'test_gauss_a_set.npy')
-test_true_wind = np.load(datadir + 'test_wind_a_set.npy')
-test_label = np.load(datadir + 'test_labels.npy')
-
-test_data_len = 50000
-#識別学習に用いるone-hot表現のラベルを作成
-one_hot_testlabels = torch.zeros(test_data_len, 2, dtype=torch.float)
-for step, genuine_label in enumerate(test_label[:test_data_len][:,0]):
-    if genuine_label == 1:
-        one_hot_testlabels[step]=torch.tensor([1,0],dtype=torch.float)
-    if genuine_label == 0:
-        one_hot_testlabels[step]=torch.tensor([0,1],dtype=torch.float)
-#スケーリング
-test_scaled_gauss = scaler_gauss.transform(test_true_gauss)
-test_scaled_wind = scaler_wind.transform(test_true_wind)
-#データ読み込み
-testdataset = DummyDataset(test_scaled_gauss[0:test_data_len] ,test_scaled_wind[0:test_data_len] ,one_hot_testlabels[0:test_data_len])
+testdataset = DummyDataset(scaled_gauss[val_data_len:test_data_len],scaled_wind[val_data_len:test_data_len],one_hot_labels[val_data_len:test_data_len])
 batch_size = 100
 test_dataloader = DataLoader(testdataset, batch_size = batch_size, shuffle=True)
 #モデル構築
@@ -797,4 +730,3 @@ print(f"steps f1 score: {f1}")
 file3 = open(logs_dir + "test_LSTM-CNN_metrics.txt","w")
 file3.write("%s,%s,\n%s,%s,\n%s,%s,\n%s,%s,\n" %("Accuracy",str(acc),"Precision",str(prec),"Recall",str(recall),"F1 score",str(f1)))
 file3.close()
-"""
