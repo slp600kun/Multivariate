@@ -524,8 +524,8 @@ print(f'{n_max_gpus} GPUs available')
 n_gpus = min(2, n_max_gpus)
 print(f'Using {n_gpus} GPUs')
 
-train_data_len = 3000
-val_data_len = 3500
+train_data_len = 30000
+val_data_len = 35000
 
 #識別学習に用いるone-hot表現のラベルを作成
 one_hot_labels = torch.zeros(val_data_len, 3, dtype=torch.float)
@@ -585,7 +585,7 @@ for epoch in range(1, epochs+1):
         _, y_targets = train_labels.clone().max(dim=1)
         output_path1 = "plot/data-tSNE.png"
         output_path2 = "plot/vector-tSNE.png"
-        if epoch == 2:
+        if epoch == 10:
             visualize_embedding(train_gauss_tensor, train_wind_tensor, train_genuine_output, y_targets, output_path1 ,output_path2)
             sys.exit()
         #calculate contrastive loss
