@@ -389,6 +389,74 @@ def generate_npy_from_siamese_data(action_feat1:list,action_feat2:list,not_actio
 
     return feat1_a_set, feat1_b_set, feat2_a_set, feat2_b_set, labels
 
+def generate_npy_from_discriminate(action_feat1:list,action_feat2:list,not_action_feat1:list,not_action_feat2:list,additional_action_feat1:list,additional_action_feat2:list):
+
+    """
+    duscriminate dataをラベリングし、npyファイルに出力する関数
+
+    args:
+        action_feat1(list):行動を取った時の特徴量1のデータ
+        action_feat2(list):行動を取った時の特徴量2のデータ
+        not_action_feat1(list):行動を取らない時の特徴量1のデータ
+        not_action_feat2(list):行動を取らない時の特徴量2のデータ
+    returns:
+        feat1_a_set(list):特徴量1のデータ(行動を取るor取らないデータの2対)
+        feat1_b_set(list):特徴量1のデータ(行動を取るor取らないデータの2対)
+        feat2_a_set(list):特徴量2のデータ(行動を取るor取らないデータの2対)
+        feat2_b_set(list):特徴量2のデータ(行動を取るor取らないデータの2対)
+        labels(list):各データセットのラベル
+    """
+
+    def labeling_for_action(action_feat: list, not_action_feat: list, additional_action_feat: list):
+        
+        """
+        ある特徴量の行動を取るor取らないデータの配列の全ての組み合わせに対してラベル(0,1)を付ける
+
+        args:
+            - action_feat(list): 行動を取る場合の指定した特徴量データ
+            - not_action_feat(list): 行動を取らない場合の指定した特徴量データ
+            - additional_action_feat(list): 追加の行動を取る場合の指定した特徴量データ
+        return:
+            - feat_a, feat_b, feat_y: 特徴量データとラベル
+        """
+
+        feat_a = []
+        feat_b = []
+        feat_y = []
+
+        for wave_1 in not_action_feat:
+            for wave_2 in not_action_feat:
+                feat_a.append(wave_1)
+                feat_b.append(wave_2)
+                feat_y.append(0)
+
+        for wave_1 in action_feat:
+            for wave_2 in action_feat:
+                feat_a.append(wave_1)
+                feat_b.append(wave_2)
+                feat_y.append(1)
+
+        for wave_1 in additional_action_feat:
+            for wave_2 in additional_action_feat:
+                feat_a.append(wave_1)
+                feat_b.append(wave_2)
+                feat_y.append(2)
+
+        return feat_a, feat_b, feat_y
+    
+    feat1_a,feat1_b,label = labeling_for_action(action_feat1[:200],not_action_feat1[:1000],additional_action_feat1[:200])
+
+    # Combine the arrays into a list of tuples
+    combined = list(zip(feat1_a, feat1_b, label))
+
+    # Shuffle the list using random.shuffle()
+    random.shuffle(combined)
+
+    # Unpack the shuffled tuples back into separate arrays
+    feat1_a_set, feat1_b_set, feat2_a_set, feat2_b_set, labels = zip(*combined)
+
+    return feat1_a_set, feat1_b_set, feat2_a_set, feat2_b_set, labels
+
 def normalization(data):
 
     # データの平均値と標準偏差を計算
@@ -398,7 +466,6 @@ def normalization(data):
     # data of normalization
     normalized_data = (data - mean) / std
     return normalized_data
-
 
 class ContrastiveLoss(nn.Module):
     def __init__(self, margin=1.2):
@@ -502,7 +569,12 @@ wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_siamese
                                                                                       no_gauss_list,                                                                                      
                                                                                       air_wind_list,
                                                                                       air_gauss_list)
-
+wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_discriminate(walk_wind_list,
+                                                                                      walk_gauss_list,
+                                                                                      no_wind_list,
+                                                                                      no_gauss_list,                                                                                      
+                                                                                      air_wind_list,
+                                                                                      air_gauss_list)
 #npyファイルに変換
 datadir = "data/train-npy/"
 
@@ -583,9 +655,9 @@ for epoch in range(1, epochs+1):
     for steps, (train_gauss_tensor, train_wind_tensor, train_labels) in tqdm(enumerate(train_dataloader),total=len(train_dataloader)):        
         cont_optimizer.zero_grad() 
         train_genuine_output = model(train_gauss_tensor.to(device), train_wind_tensor.to(device))
-        _, y_targets = train_labels.clone().max(dim=1)
-        output_path1 = "plot/data-tSNE.png"
-        output_path2 = "plot/vector-tSNE.png"
+        #_, y_targets = train_labels.clone().max(dim=1)
+        #output_path1 = "plot/data-tSNE.png"
+        #output_path2 = "plot/vector-tSNE.png"
         #calculate contrastive loss
         train_cont_loss = lossfn(train_genuine_output, train_labels.to(device),device)
         train_cont_losses.append(train_cont_loss.cpu().detach().numpy())        
@@ -609,8 +681,26 @@ device1 = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 model_path = checkpoints_dir + "dist_model_" + str(epoch) + ".pt"
 model.load_state_dict(torch.load(model_path))
 
+class FC(nn.Module):
+    def __init__(self,num_classes):
+        super().__init__()
+        self.fc1 = nn.Linear(128, 64)
+        self.fc2 = nn.Linear(64,num_classes)
+        self.dropout1 = nn.Dropout(0.3)
+        self.bn_block_1 = nn.BatchNorm1d(64)
+        self.relu = nn.PReLU()
+
+    def forward(self, gauss_input,wind_input):
+        x = self.encoder(gauss_input,wind_input)
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.dropout1(x)
+        x = self.bn_block_1(x)
+        x = self.fc2(x)
+        return x
+    
 # Create an instance of the CNN model
-identify_model = CNN(num_classes=3)
+identify_model = FC(num_classes=3)
 identify_model.encoder = model.embedding
 identify_model.to(device1)
 # モデルの一部を凍結
@@ -635,6 +725,10 @@ for epoch in range(1, class_epochs+1):
         train_outputs = identify_model(train_gauss_tensor.to(device1),train_wind_tensor.to(device1))
         #calculate cross entropy loss
         _, train_y_targets = train_labels.clone().max(dim=1)
+        output_path1 = "plot/data-tSNE.png"
+        output_path2 = "plot/vector-tSNE.png"
+        visualize_embedding(train_gauss_tensor, train_wind_tensor, train_outputs, train_y_targets, output_path1, output_path2)
+        sys.exit()
         train_cross_en_loss = criterion(train_outputs.requires_grad_(True), train_y_targets.long().to(device1))
         train_cross_en_losses.append(train_cross_en_loss.cpu().detach().numpy())
         #calculate accuracy
