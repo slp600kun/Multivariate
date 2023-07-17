@@ -477,7 +477,7 @@ class ContrastiveLoss(nn.Module):
         anchor = embeddings[::2]
         positive = embeddings[1::2]
         label = (labels[::2] == labels[1::2]).float()
-        label = [1 if item[0] == 1 and item[1] == 1 else 0 for item in label]
+        label = [1 if item[0] == 1 and item[1] == 1 and item[2] == 1 else 0 for item in label]
 
         # ベクトル間のユークリッド距離を計算
         distance = torch.norm(anchor - positive, dim=1)
@@ -566,22 +566,13 @@ no_wind_list, no_gauss_list = process_no_files('no')
 wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_siamese_data(walk_wind_list,
                                                                                       walk_gauss_list,
                                                                                       no_wind_list,
-                                                                                      no_gauss_list,                                                                                      
-                                                                                      air_wind_list,
-                                                                                      air_gauss_list)
-wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_discriminate(walk_wind_list,
-                                                                                      walk_gauss_list,
-                                                                                      no_wind_list,
-                                                                                      no_gauss_list,                                                                                      
-                                                                                      air_wind_list,
+                                                                                      no_gauss_list,                                                                                                                                            air_wind_list,
                                                                                       air_gauss_list)
 #npyファイルに変換
 datadir = "data/train-npy/"
 
 np.save(datadir + 'wind_a_set', wind_a_set)
-np.save(datadir + 'wind_b_set', wind_b_set)
 np.save(datadir + 'gauss_a_set', gauss_a_set)
-np.save(datadir + 'gauss_b_set', gauss_b_set)
 np.save(datadir + 'labels', labels)
 """
 datadir = "data/train-npy/"
@@ -596,9 +587,9 @@ print(f'{n_max_gpus} GPUs available')
 n_gpus = min(2, n_max_gpus)
 print(f'Using {n_gpus} GPUs')
 
-train_data_len = 3000
-val_data_len = 3500
-test_data_len = 5000
+train_data_len = 300000
+val_data_len = 350000
+test_data_len = 400000
 
 #識別学習に用いるone-hot表現のラベルを作成
 one_hot_labels = torch.zeros(test_data_len, 3, dtype=torch.float)
@@ -622,8 +613,8 @@ scaled_wind = scaler_wind.transform(true_wind)
 traindataset = DummyDataset(scaled_gauss[0:train_data_len],scaled_wind[0:train_data_len],one_hot_labels[0:train_data_len])
 valdataset = DummyDataset(scaled_gauss[train_data_len:val_data_len],scaled_wind[train_data_len:val_data_len],one_hot_labels[train_data_len:val_data_len])
 
-epochs = 1
-class_epochs = 1
+epochs = 10
+class_epochs = 30
 batch_size = 100
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
@@ -691,13 +682,13 @@ class FC(nn.Module):
         self.relu = nn.PReLU()
 
     def forward(self, gauss_input,wind_input):
-        x = self.encoder(gauss_input,wind_input)
-        x = self.fc1(x)
+        C_x = self.encoder(gauss_input,wind_input)
+        x = self.fc1(C_x)
         x = self.relu(x)
         x = self.dropout1(x)
         x = self.bn_block_1(x)
         x = self.fc2(x)
-        return x
+        return x,C_x
     
 # Create an instance of the CNN model
 identify_model = FC(num_classes=3)
@@ -722,13 +713,9 @@ for epoch in range(1, class_epochs+1):
     for steps, (train_gauss_tensor, train_wind_tensor, train_labels) in tqdm(enumerate(train_dataloader),total=len(train_dataloader)):
         cross_en_optimizer.zero_grad()
         # Forward pass
-        train_outputs = identify_model(train_gauss_tensor.to(device1),train_wind_tensor.to(device1))
+        train_outputs,_ = identify_model(train_gauss_tensor.to(device1),train_wind_tensor.to(device1))
         #calculate cross entropy loss
         _, train_y_targets = train_labels.clone().max(dim=1)
-        output_path1 = "plot/data-tSNE.png"
-        output_path2 = "plot/vector-tSNE.png"
-        visualize_embedding(train_gauss_tensor, train_wind_tensor, train_outputs, train_y_targets, output_path1, output_path2)
-        sys.exit()
         train_cross_en_loss = criterion(train_outputs.requires_grad_(True), train_y_targets.long().to(device1))
         train_cross_en_losses.append(train_cross_en_loss.cpu().detach().numpy())
         #calculate accuracy
@@ -754,9 +741,13 @@ for epoch in range(1, class_epochs+1):
     with torch.no_grad():
         for steps, (val_gauss_tensor, val_wind_tensor, val_labels) in tqdm(enumerate(val_dataloader),total=len(val_dataloader)):
             # Forward pass
-            val_outputs = identify_model(val_gauss_tensor.to(device1), val_wind_tensor.to(device1))
+            val_outputs,embedding = identify_model(val_gauss_tensor.to(device1), val_wind_tensor.to(device1))
             #calculate loss
             _, y_val_targets = val_labels.clone().max(dim=1)
+            #output_path1 = "plot/data-tSNE.png"
+            #output_path2 = "plot/vector-tSNE.png"
+            #visualize_embedding(val_gauss_tensor, val_wind_tensor, embedding, y_val_targets, output_path1, output_path2)
+            #sys.exit()
             val_cross_en_loss = criterion(val_outputs.requires_grad_(True), y_val_targets.long().to(device1))
             val_cross_en_losses.append(val_cross_en_loss.cpu().detach().numpy())
             #calculate accuracy
@@ -797,7 +788,7 @@ test_f1_scores = []
 #テスト
 with torch.no_grad():
     for steps, (test_gauss_tensor, test_wind_tensor, test_labels) in tqdm(enumerate(test_dataloader),total=len(test_dataloader)):
-        test_outputs = identify_model(test_gauss_tensor.to(device1), test_wind_tensor.to(device1))
+        test_outputs,_ = identify_model(test_gauss_tensor.to(device1), test_wind_tensor.to(device1))
         #calculate loss
         _, test_true_classes = test_labels.clone().max(dim=1)
         #calculate accuracy
