@@ -173,8 +173,7 @@ class HammingLoss(torch.nn.Module):
 
 def generate_siamese_data(action_df:pd,
                           slide_length:int,
-                          segment_data_length:int,
-                          not_action_df_starting_point:int):
+                          segment_data_length:int):
     
     """
     dfの対から必要なデータ列を選択し、一定の長さで
@@ -198,20 +197,7 @@ def generate_siamese_data(action_df:pd,
 
         return:
             - segmented_datafarme_array(list)選択したデータをスライド出力したもの
-        """
-
-        #データを選ぶ
-        if is_wind_converted == False:
-            df = df.drop('V(m/s)', axis=1)
-        
-        if is_temp_converted == False:
-            df = df.drop('T(C)', axis=1)
-        
-        if is_humid_converted == False:
-            df = df.drop('H(%RH)', axis=1)
-        
-        if is_gauss_converted == False:
-            df = df.drop('φ(mG)', axis=1)   
+        """ 
         
         #出力配列
         segmented_datafarme_array = []
@@ -240,55 +226,35 @@ def generate_siamese_data(action_df:pd,
         action_feat2.append(action_df[feat_list[1]].values)
     return action_feat1,action_feat2
 
-def process_action_files(data_type):
+def process_files(data_type):
 
     climo_files = sorted([f for f in os.listdir(f'data/csv/climomaster/{data_type}/')])
     gauss_files = sorted([f for f in os.listdir(f'data/csv/ML-logger/{data_type}/')])
 
-    wind_list = []
-    gauss_list = []
+    #wind_list = []
+    #gauss_list = []
+    merged_dfs = []  
 
-    for i, (climo_csv_path, gauss_csv_path) in enumerate(zip(climo_files, gauss_files)):
+    for climo_csv_path, gauss_csv_path in zip(climo_files, gauss_files):
         # ファイルパスを指定する
         climo_path = f'data/csv/climomaster/{data_type}/' + climo_csv_path
         gauss_path = f'data/csv/ML-logger/{data_type}/' + gauss_csv_path
 
         # dfにする
         merged_df = preprocess.convert_csv_to_mergedcsv(climo_path, gauss_path)
-        wind_vel, gauss = generate_siamese_data(merged_df, 4, 60, 300 * (i + 1))
+        if data_type == 'no':
+            smaller_df = merged_df[:3150]
+            # データフレームを5つの部分に分割する
+            split_dfs = np.array_split(smaller_df, 5)
+            merged_dfs.extend(split_dfs)  
+        else:
+            merged_dfs.append(merged_df)  
+        """
+        wind_vel, gauss = generate_siamese_data(merged_df, 4, 60)
         wind_list.extend(wind_vel)
         gauss_list.extend(gauss)
-    
-    return wind_list, gauss_list
-
-def process_no_files(data_type):
-
-    climo_files = sorted([f for f in os.listdir(f'data/csv/climomaster/{data_type}/')])
-    gauss_files = sorted([f for f in os.listdir(f'data/csv/ML-logger/{data_type}/')])
-
-    wind_list = []
-    gauss_list = []
-
-    for i, (climo_csv_path, gauss_csv_path) in enumerate(zip(climo_files, gauss_files)):
-        # ファイルパスを指定する
-        climo_path = f'data/csv/climomaster/{data_type}/' + climo_csv_path
-        gauss_path = f'data/csv/ML-logger/{data_type}/' + gauss_csv_path
-
-        # dfにする
-        merged_df = preprocess.convert_csv_to_mergedcsv(climo_path, gauss_path)
-        wind_vel, gauss = generate_siamese_data(merged_df, 4, 60, 300 * (i + 1))
-        wind_list.extend(wind_vel)
-        gauss_list.extend(gauss)
-    # 共通のランダムな順序を生成
-    random_order = random.sample(range(len(wind_list)), len(wind_list))
-
-    # 配列を共通のランダムな順序に並び替え
-    wind_list = [wind_list[i] for i in random_order]
-    gauss_list = [gauss_list[i] for i in random_order]
-    # それぞれの配列から20000個ずつ抽出
-    extracted_wind_list = wind_list[:20000]
-    extracted_gauss_list = gauss_list[:20000]    
-    return extracted_wind_list, extracted_gauss_list
+        """
+    return merged_dfs
 
 def generate_npy_from_siamese_data(action_feat1:list,action_feat2:list,not_action_feat1:list,not_action_feat2:list,additional_action_feat1:list,additional_action_feat2:list):
 
@@ -375,8 +341,8 @@ def generate_npy_from_siamese_data(action_feat1:list,action_feat2:list,not_actio
 
         return feat_a, feat_b, feat_y
     
-    feat1_a,feat1_b,label = labeling_for_action(action_feat1[:200],not_action_feat1[:1000],additional_action_feat1[:200])
-    feat2_a,feat2_b,_ = labeling_for_action(action_feat2[:200],not_action_feat2[:1000],additional_action_feat2[:200])
+    feat1_a,feat1_b,label = labeling_for_action(action_feat1,not_action_feat1,additional_action_feat1)
+    feat2_a,feat2_b,_ = labeling_for_action(action_feat2,not_action_feat2,additional_action_feat2)
 
     # Combine the arrays into a list of tuples
     combined = list(zip(feat1_a, feat1_b, feat2_a, feat2_b, label))
@@ -392,7 +358,7 @@ def generate_npy_from_siamese_data(action_feat1:list,action_feat2:list,not_actio
 def generate_npy_from_discriminate(action_feat1:list,action_feat2:list,not_action_feat1:list,not_action_feat2:list,additional_action_feat1:list,additional_action_feat2:list):
 
     """
-    duscriminate dataをラベリングし、npyファイルに出力する関数
+    discriminate dataをラベリングし、npyファイルに出力する関数
 
     args:
         action_feat1(list):行動を取った時の特徴量1のデータ
@@ -556,66 +522,248 @@ def visualize_embedding(true_gauss_tensor, true_wind_tensor, genuine_output, lab
 
     # genuine_outputのt-SNE可視化
     visualize_tsne(genuine_output_data, labels, 'genuine_output' , output_file2)
-"""
+
 preprocess = preprocess_for_Siamese_Net()
 
-walk_wind_list, walk_gauss_list = process_action_files('walk')
-air_wind_list, air_gauss_list = process_action_files('air')
-no_wind_list, no_gauss_list = process_no_files('no')
+walk_dfs = process_files('walk')
+air_dfs = process_files('air')
+no_dfs = process_files('no')
+
+# データフレームの列を抽出する
+column_names = ["V(m/s)", "φ(mG)"]
+extracted_walk_dfs = [df[column_names] for df in walk_dfs]
+extracted_air_dfs = [df[column_names] for df in air_dfs]
+extracted_no_dfs = [df[column_names] for df in no_dfs]
+
+# 各リストから4/5個のデータフレームを取り出す
+train_walk_dfs = extracted_walk_dfs[:8]
+train_air_dfs = extracted_air_dfs[:8]
+train_no_dfs = extracted_no_dfs[:40]
+
+val_walk_dfs = [extracted_walk_dfs[8]]
+val_air_dfs = [extracted_air_dfs[8]]
+val_no_dfs = extracted_no_dfs[40:45]
+
+test_walk_dfs = [extracted_walk_dfs[9]]
+test_air_dfs = [extracted_air_dfs[9]]
+test_no_dfs = extracted_no_dfs[45:50]
+
+train_wind = np.concatenate([df["V(m/s)"] for df in train_walk_dfs + train_air_dfs + train_no_dfs])
+train_gauss = np.concatenate([df["φ(mG)"] for df in train_walk_dfs + train_air_dfs + train_no_dfs])
+train_wind = np.array(train_wind)
+train_gauss = np.array(train_gauss)
+# 正規化
+scaler_wind = StandardScaler()
+scaler_gauss = StandardScaler()
+scaler_wind.fit(train_wind.reshape(-1, 1))
+scaler_gauss.fit(train_gauss.reshape(-1, 1))
+normalized_train_walk_dfs = [pd.DataFrame({
+    "V(m/s)": scaler_wind.transform(df["V(m/s)"].values.reshape(-1, 1)).flatten(),
+    "φ(mG)": scaler_gauss.transform(df["φ(mG)"].values.reshape(-1, 1)).flatten()
+}, index=df.index) for df in train_walk_dfs]
+normalized_train_air_dfs = [pd.DataFrame({
+    "V(m/s)": scaler_wind.transform(df["V(m/s)"].values.reshape(-1, 1)).flatten(),
+    "φ(mG)": scaler_gauss.transform(df["φ(mG)"].values.reshape(-1, 1)).flatten()
+}, index=df.index) for df in train_air_dfs]
+normalized_train_no_dfs = [pd.DataFrame({
+    "V(m/s)": scaler_wind.transform(df["V(m/s)"].values.reshape(-1, 1)).flatten(),
+    "φ(mG)": scaler_gauss.transform(df["φ(mG)"].values.reshape(-1, 1)).flatten()
+}, index=df.index) for df in train_no_dfs]
+
+normalized_val_walk_dfs = [pd.DataFrame({
+    "V(m/s)": scaler_wind.transform(df["V(m/s)"].values.reshape(-1, 1)).flatten(),
+    "φ(mG)": scaler_gauss.transform(df["φ(mG)"].values.reshape(-1, 1)).flatten()
+}, index=df.index) for df in val_walk_dfs]
+normalized_val_air_dfs = [pd.DataFrame({
+    "V(m/s)": scaler_wind.transform(df["V(m/s)"].values.reshape(-1, 1)).flatten(),
+    "φ(mG)": scaler_gauss.transform(df["φ(mG)"].values.reshape(-1, 1)).flatten()
+}, index=df.index) for df in val_air_dfs]
+normalized_val_no_dfs = [pd.DataFrame({
+    "V(m/s)": scaler_wind.transform(df["V(m/s)"].values.reshape(-1, 1)).flatten(),
+    "φ(mG)": scaler_gauss.transform(df["φ(mG)"].values.reshape(-1, 1)).flatten()
+}, index=df.index) for df in val_no_dfs]
+
+normalized_test_walk_dfs = [pd.DataFrame({
+    "V(m/s)": scaler_wind.transform(df["V(m/s)"].values.reshape(-1, 1)).flatten(),
+    "φ(mG)": scaler_gauss.transform(df["φ(mG)"].values.reshape(-1, 1)).flatten()
+}, index=df.index) for df in test_walk_dfs]
+normalized_test_air_dfs = [pd.DataFrame({
+    "V(m/s)": scaler_wind.transform(df["V(m/s)"].values.reshape(-1, 1)).flatten(),
+    "φ(mG)": scaler_gauss.transform(df["φ(mG)"].values.reshape(-1, 1)).flatten()
+}, index=df.index) for df in test_air_dfs]
+normalized_test_no_dfs = [pd.DataFrame({
+    "V(m/s)": scaler_wind.transform(df["V(m/s)"].values.reshape(-1, 1)).flatten(),
+    "φ(mG)": scaler_gauss.transform(df["φ(mG)"].values.reshape(-1, 1)).flatten()
+}, index=df.index) for df in test_no_dfs]
+
+# リスト内の各データフレームに正規化を適用
+# train_walk_dfsにscalerを適用
+
+walk_wind_list = []
+walk_gauss_list = []
+for df in normalized_train_walk_dfs:
+    sep_walk_wind,sep_walk_gauss = generate_siamese_data(df,4,60)
+    walk_wind_list.extend(sep_walk_wind)
+    walk_gauss_list.extend(sep_walk_gauss)
+air_wind_list = []
+air_gauss_list = []
+for df in normalized_train_air_dfs:
+    sep_air_wind,sep_air_gauss = generate_siamese_data(df,4,60)
+    air_wind_list.extend(sep_air_wind)
+    air_gauss_list.extend(sep_air_gauss)
+no_wind_list = []
+no_gauss_list = []
+for df in normalized_train_no_dfs:
+    sep_no_wind,sep_no_gauss = generate_siamese_data(df,4,60)
+    no_wind_list.extend(sep_no_wind)
+    no_gauss_list.extend(sep_no_gauss)
+
+val_walk_wind_list = []
+val_walk_gauss_list = []
+for df in normalized_val_walk_dfs:
+    sep_walk_wind,sep_walk_gauss = generate_siamese_data(df,4,60)
+    val_walk_wind_list.extend(sep_walk_wind)
+    val_walk_gauss_list.extend(sep_walk_gauss)
+val_air_wind_list = []
+val_air_gauss_list = []
+for df in normalized_val_air_dfs:
+    sep_air_wind,sep_air_gauss = generate_siamese_data(df,4,60)
+    val_air_wind_list.extend(sep_air_wind)
+    val_air_gauss_list.extend(sep_air_gauss)
+val_no_wind_list = []
+val_no_gauss_list = []
+for df in normalized_val_no_dfs:
+    sep_no_wind,sep_no_gauss = generate_siamese_data(df,4,60)
+    val_no_wind_list.extend(sep_no_wind)
+    val_no_gauss_list.extend(sep_no_gauss)
+
+test_walk_wind_list = []
+test_walk_gauss_list = []
+for df in normalized_test_walk_dfs:
+    sep_walk_wind,sep_walk_gauss = generate_siamese_data(df,4,60)
+    test_walk_wind_list.extend(sep_walk_wind)
+    test_walk_gauss_list.extend(sep_walk_gauss)
+test_air_wind_list = []
+test_air_gauss_list = []
+for df in normalized_test_air_dfs:
+    sep_air_wind,sep_air_gauss = generate_siamese_data(df,4,60)
+    test_air_wind_list.extend(sep_air_wind)
+    test_air_gauss_list.extend(sep_air_gauss)
+test_no_wind_list = []
+test_no_gauss_list = []
+for df in normalized_test_no_dfs:
+    sep_no_wind,sep_no_gauss = generate_siamese_data(df,4,60)
+    test_no_wind_list.extend(sep_no_wind)
+    test_no_gauss_list.extend(sep_no_gauss)
+
+#ランダムに200個,200個,1000個選択する
+walk_wind_list = random.sample(walk_wind_list, 200)
+walk_gauss_list = random.sample(walk_gauss_list, 200)
+air_wind_list = random.sample(air_wind_list, 200)
+air_gauss_list = random.sample(air_gauss_list, 200)
+no_wind_list = random.sample(no_wind_list, 1000)
+no_gauss_list = random.sample(no_gauss_list, 1000)
+
+#ランダムに80個,80個,400個選択する
+val_walk_wind_list = random.sample(val_walk_wind_list, 80)
+val_walk_gauss_list = random.sample(val_walk_gauss_list, 80)
+val_air_wind_list = random.sample(val_air_wind_list, 80)
+val_air_gauss_list = random.sample(val_air_gauss_list, 80)
+val_no_wind_list = random.sample(val_no_wind_list, 400)
+val_no_gauss_list = random.sample(val_no_gauss_list, 400)
+
+#ランダムに80個,80個,400個選択する
+test_walk_wind_list = random.sample(test_walk_wind_list, 80)
+test_walk_gauss_list = random.sample(test_walk_gauss_list, 80)
+test_air_wind_list = random.sample(test_air_wind_list, 80)
+test_air_gauss_list = random.sample(test_air_gauss_list, 80)
+test_no_wind_list = random.sample(test_no_wind_list, 400)
+test_no_gauss_list = random.sample(test_no_gauss_list, 400)
 
 wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_siamese_data(walk_wind_list,
-                                                                                      walk_gauss_list,
-                                                                                      no_wind_list,
-                                                                                      no_gauss_list,                                                                                                                                            air_wind_list,
-                                                                                      air_gauss_list)
+                                                                                        walk_gauss_list,
+                                                                                        no_wind_list,
+                                                                                        no_gauss_list,
+                                                                                        air_wind_list,
+                                                                                        air_gauss_list)
+val_wind_a_set,val_wind_b_set,val_gauss_a_set,val_gauss_b_set,val_labels = generate_npy_from_siamese_data(val_walk_wind_list,
+                                                                                        val_walk_gauss_list,
+                                                                                        val_no_wind_list,
+                                                                                        val_no_gauss_list,
+                                                                                        val_air_wind_list,
+                                                                                        val_air_gauss_list)
+test_wind_a_set,test_wind_b_set,test_gauss_a_set,test_gauss_b_set,test_labels = generate_npy_from_siamese_data(test_walk_wind_list,
+                                                                                        test_walk_gauss_list,
+                                                                                        test_no_wind_list,
+                                                                                        test_no_gauss_list,
+                                                                                        test_air_wind_list,
+                                                                                        test_air_gauss_list)
 #npyファイルに変換
 datadir = "data/train-npy/"
 
-np.save(datadir + 'wind_a_set', wind_a_set)
-np.save(datadir + 'gauss_a_set', gauss_a_set)
-np.save(datadir + 'labels', labels)
-"""
+np.save(datadir + 'train_wind_set', wind_a_set)
+np.save(datadir + 'train_gauss_set', gauss_a_set)
+np.save(datadir + 'train_labels', labels)
+np.save(datadir + 'val_wind_set', val_wind_a_set)
+np.save(datadir + 'val_gauss_set', val_gauss_a_set)
+np.save(datadir + 'val_labels', val_labels)
+np.save(datadir + 'test_wind_set', test_wind_a_set)
+np.save(datadir + 'test_gauss_set', test_gauss_a_set)
+np.save(datadir + 'test_labels', test_labels)
+
 datadir = "data/train-npy/"
 checkpoints_dir = "data/checkpoints/"
 logs_dir = "data/logs/"
 
-true_gauss = np.load(datadir + 'gauss_a_set.npy')
-true_wind = np.load(datadir + 'wind_a_set.npy')
-label = np.load(datadir + 'labels.npy')
+train_gauss = np.load(datadir + 'train_gauss_set.npy')
+train_wind = np.load(datadir + 'train_wind_set.npy')
+train_label = np.load(datadir + 'train_labels.npy')
+val_gauss = np.load(datadir + 'val_gauss_set.npy')
+val_wind = np.load(datadir + 'val_wind_set.npy')
+val_label = np.load(datadir + 'val_labels.npy')
+test_gauss = np.load(datadir + 'test_gauss_set.npy')
+test_wind = np.load(datadir + 'test_wind_set.npy')
+test_label = np.load(datadir + 'test_labels.npy')
+
 n_max_gpus = torch.cuda.device_count()
 print(f'{n_max_gpus} GPUs available')
 n_gpus = min(2, n_max_gpus)
 print(f'Using {n_gpus} GPUs')
 
-train_data_len = 300000
-val_data_len = 350000
-test_data_len = 400000
 
 #識別学習に用いるone-hot表現のラベルを作成
-one_hot_labels = torch.zeros(test_data_len, 3, dtype=torch.float)
-for step, genuine_label in enumerate(label[:test_data_len][:,0]):
+train_one_hot_labels = torch.zeros(len(train_gauss), 3, dtype=torch.float)
+val_one_hot_labels = torch.zeros(len(val_gauss), 3, dtype=torch.float)
+test_one_hot_labels = torch.zeros(len(test_gauss), 3, dtype=torch.float)
+for step, genuine_label in enumerate(train_label[:,0]):
     if genuine_label == 0:
-        one_hot_labels[step]=torch.tensor([1,0,0],dtype=torch.float)
+        train_one_hot_labels[step]=torch.tensor([1,0,0],dtype=torch.float)
     if genuine_label == 1:
-        one_hot_labels[step]=torch.tensor([0,1,0],dtype=torch.float)
+        train_one_hot_labels[step]=torch.tensor([0,1,0],dtype=torch.float)
     if genuine_label == 2:
-        one_hot_labels[step]=torch.tensor([0,0,1],dtype=torch.float)
+        train_one_hot_labels[step]=torch.tensor([0,0,1],dtype=torch.float)
+for step, genuine_label in enumerate(val_label[:,0]):
+    if genuine_label == 0:
+        val_one_hot_labels[step]=torch.tensor([1,0,0],dtype=torch.float)
+    if genuine_label == 1:
+        val_one_hot_labels[step]=torch.tensor([0,1,0],dtype=torch.float)
+    if genuine_label == 2:
+        val_one_hot_labels[step]=torch.tensor([0,0,1],dtype=torch.float)
+for step, genuine_label in enumerate(test_label[:,0]):
+    if genuine_label == 0:
+        test_one_hot_labels[step]=torch.tensor([1,0,0],dtype=torch.float)
+    if genuine_label == 1:
+        test_one_hot_labels[step]=torch.tensor([0,1,0],dtype=torch.float)
+    if genuine_label == 2:
+        test_one_hot_labels[step]=torch.tensor([0,0,1],dtype=torch.float)
 
-scaler_gauss = StandardScaler()
-scaler_wind = StandardScaler()
+traindataset = DummyDataset(train_gauss,train_wind,train_one_hot_labels)
+valdataset = DummyDataset(val_gauss,val_wind,val_one_hot_labels)
 
-scaler_gauss.fit(true_gauss[0:train_data_len])
-scaled_gauss = scaler_gauss.transform(true_gauss)
-
-scaler_wind.fit(true_wind[0:train_data_len])
-scaled_wind = scaler_wind.transform(true_wind)
-
-traindataset = DummyDataset(scaled_gauss[0:train_data_len],scaled_wind[0:train_data_len],one_hot_labels[0:train_data_len])
-valdataset = DummyDataset(scaled_gauss[train_data_len:val_data_len],scaled_wind[train_data_len:val_data_len],one_hot_labels[train_data_len:val_data_len])
 
 epochs = 10
 class_epochs = 30
-batch_size = 100
+batch_size = 1000
 train_dataloader = DataLoader(traindataset, batch_size = batch_size, shuffle=True)
 val_dataloader = DataLoader(valdataset, batch_size = batch_size, shuffle=True)
 
@@ -766,8 +914,8 @@ for epoch in range(1, class_epochs+1):
 file1.close()
 file2.close()
 
-testdataset = DummyDataset(scaled_gauss[val_data_len:test_data_len],scaled_wind[val_data_len:test_data_len],one_hot_labels[val_data_len:test_data_len])
-batch_size = 100
+testdataset = DummyDataset(test_gauss,test_wind,test_one_hot_labels)
+batch_size = 1000
 test_dataloader = DataLoader(testdataset, batch_size = batch_size, shuffle=True)
 #モデル構築
 class_model_path = checkpoints_dir + "class_model_" + str(class_epochs) + ".pt"
