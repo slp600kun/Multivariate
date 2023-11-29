@@ -13,6 +13,12 @@ import datetime as dt
 import pandas as pd
 import numpy as np
 import scipy
+import matplotlib.ticker as ticker
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from matplotlib.ticker import MultipleLocator
+from matplotlib.dates import DateFormatter
+import japanize_matplotlib
 #import matlab.engine
 
 from sklearn.preprocessing import minmax_scale
@@ -126,6 +132,7 @@ class preprocess_for_Siamese_Net():
         gauss_df['Time'] = gauss_df['年月日'].str.cat(gauss_df['時刻'], sep = ' ')
         gauss_df = gauss_df.drop(columns = {'年月日','時刻'})
         gauss_df = gauss_df.rename(columns = {'データ01(mG)':'φ(mG)'})
+        gauss_df = gauss_df.rename(columns = {"データ02(m/sec2)":"a(m/s^2)"})
         #全ての"Time"行にgauss_momenttime関数を適用
         gauss_df['Time'] = gauss_df['Time'].map(gauss_momenttime)
         #行の部分に時間をセットする
@@ -134,7 +141,59 @@ class preprocess_for_Siamese_Net():
         #両方のcsvをmergeし、時刻の共通部のみを切り出す
         merged_df = pd.merge(climo_df,gauss_df,left_index=True,right_index = True)
         merged_df = merged_df.dropna()
-        merged_df.plot(subplots = True)
+        merged_df = merged_df.drop(["H(%RH)","T(C)"],axis=1)
+        #merged_df.index=merged_df.index.strftime('%H:%M')
+
+        fig,axs = plt.subplots(nrows=3, sharex=True)
+        ax = axs[0]
+        if len(merged_df) > 1000:
+            ax.plot(merged_df[10000:10630].index, merged_df[10000:10630]['V(m/s)'],label='V(m/s)',color='blue')
+        else:
+            ax.plot(merged_df.index, merged_df['V(m/s)'],label='V(m/s)',color='blue')
+
+        locator = mdates.AutoDateLocator(minticks=3)
+        ax.xaxis.set_major_locator(locator)
+        day_locator = MultipleLocator(5)
+        ax.xaxis.set_minor_locator(day_locator)
+        ax.set_title('風速')
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+        ax.set_ylim(0,0.5)
+
+        ax = axs[1]
+        if len(merged_df) > 1000:
+            ax.plot(merged_df[10000:10630].index, merged_df[10000:10630]['φ(mG)'],label='φ(mG)',color='orange')
+        else:
+            ax.plot(merged_df.index, merged_df['φ(mG)'],label='φ(mG)' , color='orange')
+
+        locator = mdates.AutoDateLocator(minticks=3)
+        ax.xaxis.set_major_locator(locator)
+        day_locator = MultipleLocator(5)
+        ax.xaxis.set_minor_locator(day_locator)
+        ax.set_title('磁束密度')
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+        ax.set_ylim(550,650)
+
+        ax = axs[2]
+        if len(merged_df) > 1000:
+            ax.plot(merged_df[10000:10630].index, merged_df[10000:10630]['a(m/s^2)'],label='φ(mG)',color='orange')
+        else:
+            ax.plot(merged_df.index, merged_df['a(m/s^2)'],label='a(m/s^2)' , color='orange')
+
+        locator = mdates.AutoDateLocator(minticks=3)
+        ax.xaxis.set_major_locator(locator)
+        day_locator = MultipleLocator(5)
+        ax.xaxis.set_minor_locator(day_locator)
+        ax.set_title('加速度')
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+        ax.set_xlabel("time")
+        ax.set_ylim(0,1)
+
+        # 凡例を追加
+        axs[0].legend()
+        axs[1].legend()
+        axs[2].legend()
+        plt.savefig('plot/walk.eps', format='eps')
+        plt.show()
         
         return merged_df
     
