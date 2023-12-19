@@ -1,4 +1,0 @@
-Accuracy,0,
-Precision,0,
-Recall,0,
-F1 score,0,
