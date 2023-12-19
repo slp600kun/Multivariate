@@ -144,6 +144,7 @@ class preprocess_for_Siamese_Net():
         merged_df = merged_df.drop(["H(%RH)","T(C)"],axis=1)
         #merged_df.index=merged_df.index.strftime('%H:%M')
 
+        """
         fig,axs = plt.subplots(nrows=3, sharex=True)
         ax = axs[0]
         if len(merged_df) > 1000:
@@ -194,9 +195,153 @@ class preprocess_for_Siamese_Net():
         axs[2].legend()
         plt.savefig('plot/walk.eps', format='eps')
         plt.show()
-        
+        """
         return merged_df
     
+    @classmethod
+    def vibration_csv_to_df(self, vib_csv_path:str) -> pd:
+        """
+        振動センサーの時系列csvデータから必要な情報を取り出し、datasetにする
+        arg:
+            - climo_csv_path:vibデータのcsvパス
+        return:
+            - vib_df:振動センサのデータフレーム
+        """   
+
+        def vib_momenttime(time:str,beginning_time:str)-> dt:
+            """
+            vib.dfの各データ行の日付型を生成
+
+            arg:
+                -time:時刻
+
+            return:
+                - moment_time: 日付型
+            """
+            moment_time_list = re.split('[/: ]',beginning_time)
+            year = int(moment_time_list[1])
+            month = int(moment_time_list[2])
+            day = int(moment_time_list[3])
+            hour = int(moment_time_list[4])
+            minute = int(moment_time_list[5])
+            second = int(moment_time_list[6])
+            beginning_time = dt.datetime(year,month,day,hour,minute,second)
+            moment_time = beginning_time + dt.timedelta(seconds = time)
+            return moment_time
+             
+        #パスからデータフレームを取得
+        vib_csv_df = pd.read_csv(vib_csv_path,names = ["Time(sec)", "Ax(m/(sec^2))", "Ay(m/(sec^2))", 
+                                                        "Az(m/(sec^2))", "Gx(deg/sec)", "Gy(deg/sec)", 
+                                                        "Gz(deg/sec)", "Mx(uT)", "My(uT)", "Mz(uT)", "Vx(mV)", "Vy(mV)"], encoding = 'shift_jis')
+
+
+        #csvの先頭部のinfo情報のみをvib_info_dictに抽出
+        vib_info_df = vib_csv_df[:8]
+        vib_info_df =  vib_info_df.rename(columns={'Time(sec)': 'info'})
+        vib_info_dict = dict(zip(vib_info_df['info'], vib_info_df['Ax(m/(sec^2))']))
+        
+        #開始時間とサンプリング間隔を抽出
+        beginning_time = vib_info_dict['#開始日時：']
+        sampling_interval = int(vib_info_dict['#測定周期：'])
+
+        #.csvのデータ部の情報を加工し、vib_dfに抽出
+        vib_df = vib_csv_df[9:]
+        vib_df = vib_df.drop(["Gx(deg/sec)", "Gy(deg/sec)", "Gz(deg/sec)", "Mx(uT)", "My(uT)", "Mz(uT)", "Vx(mV)", "Vy(mV)"],axis=1)
+        vib_df = vib_df.astype({'Time(sec)':float, 'Ax(m/(sec^2))':float, "Ay(m/(sec^2))":float ,"Az(m/(sec^2))":float})
+
+        #一行ずつ時間を更新
+        for i in range(len(vib_df)):
+            vib_df.loc[i+9,"Time(sec)"] = vib_momenttime(vib_df.loc[i+9,"Time(sec)"],beginning_time)
+        #行の部分に時間をセットする
+        #vib_df = vib_df.set_index('Time(sec)')
+        vib_df = vib_df.rename(columns={'Time(sec)': 'Time'})
+        
+        # 各行のノルムを計算し、新しい列を追加
+        vib_df['Norm'] = np.linalg.norm(vib_df[['Ax(m/(sec^2))', 'Ay(m/(sec^2))', 'Az(m/(sec^2))']].values, axis=1)
+        vib_df = vib_df.set_index('Time')
+        """
+        # サブプロットの設定
+        fig, axs = plt.subplots(2, 2, figsize=(12, 8))
+        fig.suptitle('Acceleration over Time')
+
+        # 各サブプロットにデータをプロット
+        axs[0, 0].plot(vib_df.index, vib_df['Ax(m/(sec^2))'], label='Ax')
+        axs[0, 0].set_title('Ax')
+        axs[0, 1].plot(vib_df.index, vib_df['Ay(m/(sec^2))'], label='Ay', color='orange')
+        axs[0, 1].set_title('Ay')
+        axs[1, 0].plot(vib_df.index, vib_df['Az(m/(sec^2))'], label='Az', color='green')
+        axs[1, 0].set_title('Az')
+        axs[1, 1].plot(vib_df.index, vib_df['Norm'], label='Norm', linestyle='--', linewidth=2, color='red')
+        axs[1, 1].set_title('Norm')
+
+        # グラフの装飾
+        for ax in axs.flat:
+            ax.set(xlabel='Time', ylabel='Acceleration (m/(sec^2))')
+            ax.legend()
+            ax.grid(True)
+
+        # タイトルとレイアウトの調整
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        plt.show()
+        """
+
+        return vib_df
+
+
+    @classmethod
+    def filter_data_by_time(self,vib_df, merged_df):
+        # Time 列を datetime 型に変換
+        vib_df.index = pd.to_datetime(vib_df.index)
+        merged_df.index = pd.to_datetime(merged_df.index)
+
+        # 一行目と最終行の時刻を取得
+        start_time = vib_df.index[0].replace(microsecond=0)
+        end_time = vib_df.index[-1].replace(microsecond=0)
+
+        # データ範囲外の行を削除
+        filtered_vib_df = vib_df.loc[(vib_df.index >= start_time) & (vib_df.index <= end_time)]
+        filtered_merged_df = merged_df.loc[(merged_df.index >= start_time) & (merged_df.index <= end_time)]
+
+        return filtered_vib_df, filtered_merged_df
+
+    @classmethod
+    def plot_acceleration_and_other_data(self,vib_df, merged_df):
+        # サブプロットの設定 (2x3)
+        fig, axs = plt.subplots(2, 3, figsize=(18, 8))
+        fig.suptitle('Acceleration and Other Data over Time')
+
+        # 加速度データのプロット
+        axs[0, 0].plot(vib_df.index, vib_df['Ax(m/(sec^2))'], label='Ax')
+        axs[0, 0].set_title('Acceleration Ax')
+        axs[0, 1].plot(vib_df.index, vib_df['Ay(m/(sec^2))'], label='Ay', color='orange')
+        axs[0, 1].set_title('Acceleration Ay')
+        axs[0, 2].plot(vib_df.index, vib_df['Az(m/(sec^2))'], label='Az', color='green')
+        axs[0, 2].set_title('AccelerationAz')
+        axs[1, 0].plot(vib_df.index, vib_df['Norm'], label='Norm', linestyle='--', linewidth=2, color='red')
+        axs[1, 0].set_title('Acceleration Norm Ax-Az')
+
+        # 他のデータのプロット
+        axs[1, 1].plot(merged_df.index, merged_df['V(m/s)'], label='V(m/s)')
+        axs[1, 1].set_title('Wind Velocity V(m/s)')
+        axs[1, 2].plot(merged_df.index, merged_df['φ(mG)'], label='φ(mG)', color='purple')
+        axs[1, 2].set_title('Milli Gaussφ(mG)')
+
+        # グラフの装飾
+        for i, ax in enumerate(axs.flat):
+            ax.set(xlabel='Time')
+            ax.legend()
+            ax.grid(True)
+            if i < 4:
+                ax.set(ylabel='Acceleration (m/(sec^2))')
+            elif i == 4:
+                ax.set(ylabel='Velocity (m/s)')
+            elif i == 5:
+                ax.set(ylabel='Milli Gauss (mG)')
+            
+        # タイトルとレイアウトの調整
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        plt.show()
+
     @classmethod
     def normalization(data_array:np)->np:
         """
