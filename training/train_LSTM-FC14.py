@@ -335,29 +335,38 @@ def visualize_embedding(true_gauss_tensor, true_wind_tensor, genuine_output, lab
     # genuine_outputのt-SNE可視化
     visualize_tsne(genuine_output_data, labels, 'genuine_output' , output_file2)
 
-"""
-climo_walk_files = sorted([f for f in os.listdir('data/csv/climomaster') if 'walk' in f])
-gauss_walk_files = sorted([f for f in os.listdir('data/csv/ML-logger') if 'walk' in f])
+def extract_number(filename,keyword):
+    # ファイル名からキーワードの後の数字を抽出
+    match = re.search(f'{keyword}(\d+)', filename)
+    if match:
+        return int(match.group(1))
+    return float('inf')  # マッチしない場合は無限大を返す
 
-walk_wind_vel_list = []
+climo_walk_files = sorted([filename for filename in os.listdir('data/csv/climomaster/walk') if filename.endswith(".CSV")], 
+                            key=lambda x: extract_number(x, "KAM"))
+gauss_walk_files = sorted([filename for filename in os.listdir('data/csv/ML-logger/walk') if 'walk' in filename],
+                            key=lambda x: extract_number(x, "walk"))
+mvr_walk_files = sorted([filename for filename in os.listdir('data/csv/MVR-RF10/walk') if 'walk' in filename],
+                            key=lambda x: extract_number(x, "walk"))
+
+walk_climo_list = []
 walk_gauss_list = []
-no_wind_vel_list = []
-no_gauss_list = []
+walk_mvr_list = []
 
 preprocess = preprocess_for_Siamese_Net()
 
-for i, (climo_csv_path, gauss_csv_path) in enumerate(zip(climo_walk_files,gauss_walk_files)):
+for i, (climo_csv_path, gauss_csv_path, mvr_csv_path) in enumerate(zip(climo_walk_files,gauss_walk_files,mvr_walk_files)):
     
     #ファイルパスを指定する
-    climo_walk_path = 'data/csv/climomaster/' + climo_csv_path
-    gauss_walk_path = 'data/csv/ML-logger/' + gauss_csv_path
-    climo_no_path = re.sub(r'-walk\d+', '', climo_walk_path)
-    gauss_no_path = re.sub(r'-walk\d+', '', gauss_walk_path)
+    climo_walk_path = 'data/csv/climomaster/walk' + climo_csv_path
+    gauss_walk_path = 'data/csv/ML-logger/walk' + gauss_csv_path
+    mvr_walk_path = 'data/csv/MVR-RF10/walk' + gauss_csv_path
 
     #dfにする
     walk_merged_df = preprocess.convert_csv_to_mergedcsv(climo_walk_path,gauss_walk_path)
-    no_merged_df = preprocess.convert_csv_to_mergedcsv(climo_no_path,gauss_no_path)
-
+    walk_vib_df = preprocess.vibration_csv_to_df(mvr_walk_path)
+    walk_merged_df,walk_vib_df = preprocess.filter_data_by_time(walk_merged_df,walk_vib_df)
+    
     walk_wind_vel,walk_gauss,no_wind_vel,no_gauss = generate_siamese_data(walk_merged_df,no_merged_df,4,60,300*(i+1))
 
     walk_wind_vel_list.extend(walk_wind_vel)
@@ -365,7 +374,7 @@ for i, (climo_csv_path, gauss_csv_path) in enumerate(zip(climo_walk_files,gauss_
     no_wind_vel_list.extend(no_wind_vel)
     no_gauss_list.extend(no_gauss)
 
-    
+
 wind_a_set,wind_b_set,gauss_a_set,gauss_b_set,labels = generate_npy_from_siamese_data(walk_wind_vel_list,
                                                                                       walk_gauss_list,
                                                                                       no_wind_vel_list,
@@ -379,7 +388,6 @@ np.save(datadir + 'wind_b_set', wind_b_set)
 np.save(datadir + 'gauss_a_set', gauss_a_set)
 np.save(datadir + 'gauss_b_set', gauss_b_set)
 np.save(datadir + 'labels', labels)
-"""
 
 datadir = "data/train-npy/"
 checkpoints_dir = "data/checkpoints/"

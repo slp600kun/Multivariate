@@ -253,11 +253,10 @@ class preprocess_for_Siamese_Net():
         for i in range(len(vib_df)):
             vib_df.loc[i+9,"Time(sec)"] = vib_momenttime(vib_df.loc[i+9,"Time(sec)"],beginning_time)
         #行の部分に時間をセットする
-        #vib_df = vib_df.set_index('Time(sec)')
         vib_df = vib_df.rename(columns={'Time(sec)': 'Time'})
         
-        # 各行のノルムを計算し、新しい列を追加
-        vib_df['Norm'] = np.linalg.norm(vib_df[['Ax(m/(sec^2))', 'Ay(m/(sec^2))', 'Az(m/(sec^2))']].values, axis=1)
+        # x-y軸での加速度のノルムを計算し、新しい列を追加
+        vib_df['Axy(m/(sec^2))'] = np.linalg.norm(vib_df[['Ax(m/(sec^2))', 'Ay(m/(sec^2))']].values, axis=1)
         vib_df = vib_df.set_index('Time')
         """
         # サブプロットの設定
@@ -302,7 +301,7 @@ class preprocess_for_Siamese_Net():
         filtered_vib_df = vib_df.loc[(vib_df.index >= start_time) & (vib_df.index <= end_time)]
         filtered_merged_df = merged_df.loc[(merged_df.index >= start_time) & (merged_df.index <= end_time)]
 
-        return filtered_vib_df, filtered_merged_df
+        return filtered_merged_df,filtered_vib_df
 
     @classmethod
     def plot_acceleration_and_other_data(self,vib_df, merged_df):
